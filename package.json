@@ -1,5 +1,5 @@
 {
-  "name": "camera-api",
+  "name": "@sentinelx/camera-api",
   "version": "0.1.0",
   "description": "TypeScript library starter for camera-related APIs.",
   "type": "module",
