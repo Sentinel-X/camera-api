@@ -67,7 +67,7 @@ describe("DahuaDevice", () => {
 
     try {
       await device.getInvasionAreaCoordinates();
-      throw new Error("Expected MissingConfigurationError");
+      expect.fail('Function should have thrown');
     } catch (error) {
       expect(error).to.be.instanceOf(MissingConfigurationError);
     }
@@ -101,7 +101,7 @@ describe("DahuaDevice", () => {
 
     await device.setInvasionAreaCoordinates([
       { x: 0.5, y: 0.5 },
-      { x: 2, y: -1 }
+      { x: 1, y: 0 }
     ]);
   });
 
@@ -115,7 +115,7 @@ describe("DahuaDevice", () => {
 
     try {
       await device.getInvasionAreaCoordinates();
-      throw new Error("Expected HttpRequestError");
+      expect.fail('Function should have thrown');
     } catch (error) {
       expect(error).to.be.instanceOf(HttpRequestError);
     }

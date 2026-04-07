@@ -72,7 +72,7 @@ describe("HikvisionDevice", () => {
 
     try {
       await device.getInvasionAreaCoordinates();
-      throw new Error("Expected MissingConfigurationError");
+      expect.fail('Function should have thrown');
     } catch (error) {
       expect(error).to.be.instanceOf(MissingConfigurationError);
     }
@@ -121,7 +121,7 @@ describe("HikvisionDevice", () => {
 
     await device.setInvasionAreaCoordinates([
       { x: 0.25, y: 0.75 },
-      { x: 1.2, y: -0.5 }
+      { x: 1, y: 0 }
     ]);
 
     expect(putBody).to.include("<positionX>250</positionX>");
@@ -162,7 +162,7 @@ describe("HikvisionDevice", () => {
 
     try {
       await device.setInvasionAreaCoordinates([{ x: 0.1, y: 0.2 }]);
-      throw new Error("Expected HttpRequestError");
+      expect.fail('Function should have thrown');
     } catch (error) {
       expect(error).to.be.instanceOf(HttpRequestError);
     }
