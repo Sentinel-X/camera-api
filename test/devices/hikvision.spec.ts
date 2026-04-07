@@ -5,28 +5,28 @@ import { HttpRequestError, MissingConfigurationError } from "../../src/errors.js
 import { DeviceConfiguration } from "../../src/types.js";
 
 const defaultConfig: DeviceConfiguration = {
-  ipOrHttpAddress: "http://hikvision.test",
-  port: 80,
-  username: "admin",
-  password: "password"
+    ipOrHttpAddress: "http://hikvision.test",
+    port: 80,
+    username: "admin",
+    password: "password"
 };
 
 describe("HikvisionDevice", () => {
-  before(() => {
-    nock.disableNetConnect();
-  });
+    before(() => {
+        nock.disableNetConnect();
+    });
 
-  after(() => {
-    nock.enableNetConnect();
-  });
+    after(() => {
+        nock.enableNetConnect();
+    });
 
-  afterEach(() => {
-    expect(nock.isDone()).to.equal(true);
-    nock.cleanAll();
-  });
+    afterEach(() => {
+        expect(nock.isDone()).to.equal(true);
+        nock.cleanAll();
+    });
 
-  it("returns normalized coordinates from field detection XML", async () => {
-    const payload = `<?xml version="1.0" encoding="UTF-8"?>
+    it("returns normalized coordinates from field detection XML", async () => {
+        const payload = `<?xml version="1.0" encoding="UTF-8"?>
       <FieldDetection>
         <enabled>true</enabled>
         <normalizedScreenSize>
@@ -44,42 +44,42 @@ describe("HikvisionDevice", () => {
         </FieldDetectionRegionList>
       </FieldDetection>`;
 
-    nock("http://hikvision.test:80")
-      .get("/ISAPI/Smart/FieldDetection/1")
-      .reply(200, payload);
+        nock("http://hikvision.test:80")
+            .get("/ISAPI/Smart/FieldDetection/1")
+            .reply(200, payload);
 
-    const device = new HikvisionDevice(defaultConfig);
+        const device = new HikvisionDevice(defaultConfig);
 
-    const coordinates = await device.getInvasionAreaCoordinates();
+        const coordinates = await device.getInvasionAreaCoordinates();
 
-    expect(coordinates).to.deep.equal([
-      { x: 0, y: 0 },
-      { x: 1, y: 1 }
-    ]);
-  });
+        expect(coordinates).to.deep.equal([
+            { x: 0, y: 0 },
+            { x: 1, y: 1 }
+        ]);
+    });
 
-  it("throws MissingConfigurationError when field detection is disabled", async () => {
-    const payload = `<?xml version="1.0" encoding="UTF-8"?>
+    it("throws MissingConfigurationError when field detection is disabled", async () => {
+        const payload = `<?xml version="1.0" encoding="UTF-8"?>
       <FieldDetection>
         <enabled>false</enabled>
       </FieldDetection>`;
 
-    nock("http://hikvision.test:80")
-      .get("/ISAPI/Smart/FieldDetection/1")
-      .reply(200, payload);
+        nock("http://hikvision.test:80")
+            .get("/ISAPI/Smart/FieldDetection/1")
+            .reply(200, payload);
 
-    const device = new HikvisionDevice(defaultConfig);
+        const device = new HikvisionDevice(defaultConfig);
 
-    try {
-      await device.getInvasionAreaCoordinates();
-      expect.fail('Function should have thrown');
-    } catch (error) {
-      expect(error).to.be.instanceOf(MissingConfigurationError);
-    }
-  });
+        try {
+            await device.getInvasionAreaCoordinates();
+            expect.fail('Function should have thrown');
+        } catch (error) {
+            expect(error).to.be.instanceOf(MissingConfigurationError);
+        }
+    });
 
-  it("updates region id=1 coordinates using converted camera values", async () => {
-    const getPayload = `<?xml version="1.0" encoding="UTF-8"?>
+    it("updates region id=1 coordinates using converted camera values", async () => {
+        const getPayload = `<?xml version="1.0" encoding="UTF-8"?>
       <FieldDetection>
         <enabled>true</enabled>
         <normalizedScreenSize>
@@ -99,39 +99,39 @@ describe("HikvisionDevice", () => {
         </FieldDetectionRegionList>
       </FieldDetection>`;
 
-    const putPayload = `<?xml version="1.0" encoding="UTF-8"?>
+        const putPayload = `<?xml version="1.0" encoding="UTF-8"?>
       <ResponseStatus>
         <statusCode>1</statusCode>
         <subStatusCode>ok</subStatusCode>
       </ResponseStatus>`;
 
-    let putBody = "";
-    nock("http://hikvision.test:80")
-      .get("/ISAPI/Smart/FieldDetection/1")
-      .reply(200, getPayload);
+        let putBody = "";
+        nock("http://hikvision.test:80")
+            .get("/ISAPI/Smart/FieldDetection/1")
+            .reply(200, getPayload);
 
-    nock("http://hikvision.test:80")
-      .put("/ISAPI/Smart/FieldDetection/1", (body: string) => {
-        putBody = String(body);
-        return true;
-      })
-      .reply(200, putPayload);
+        nock("http://hikvision.test:80")
+            .put("/ISAPI/Smart/FieldDetection/1", (body: string) => {
+                putBody = String(body);
+                return true;
+            })
+            .reply(200, putPayload);
 
-    const device = new HikvisionDevice(defaultConfig);
+        const device = new HikvisionDevice(defaultConfig);
 
-    await device.setInvasionAreaCoordinates([
-      { x: 0.25, y: 0.75 },
-      { x: 1, y: 0 }
-    ]);
+        await device.setInvasionAreaCoordinates([
+            { x: 0.25, y: 0.75 },
+            { x: 1, y: 0 }
+        ]);
 
-    expect(putBody).to.include("<positionX>250</positionX>");
-    expect(putBody).to.include("<positionY>250</positionY>");
-    expect(putBody).to.include("<positionX>1000</positionX>");
-    expect(putBody).to.include("<positionY>1000</positionY>");
-  });
+        expect(putBody).to.include("<positionX>250</positionX>");
+        expect(putBody).to.include("<positionY>250</positionY>");
+        expect(putBody).to.include("<positionX>1000</positionX>");
+        expect(putBody).to.include("<positionY>1000</positionY>");
+    });
 
-  it("throws HttpRequestError when update response is not ok", async () => {
-    const getPayload = `<?xml version="1.0" encoding="UTF-8"?>
+    it("throws HttpRequestError when update response is not ok", async () => {
+        const getPayload = `<?xml version="1.0" encoding="UTF-8"?>
       <FieldDetection>
         <enabled>true</enabled>
         <normalizedScreenSize>
@@ -144,27 +144,27 @@ describe("HikvisionDevice", () => {
         </FieldDetectionRegionList>
       </FieldDetection>`;
 
-    const badPutPayload = `<?xml version="1.0" encoding="UTF-8"?>
+        const badPutPayload = `<?xml version="1.0" encoding="UTF-8"?>
       <ResponseStatus>
         <statusCode>2</statusCode>
         <subStatusCode>error</subStatusCode>
       </ResponseStatus>`;
 
-    nock("http://hikvision.test:80")
-      .get("/ISAPI/Smart/FieldDetection/1")
-      .reply(200, getPayload);
+        nock("http://hikvision.test:80")
+            .get("/ISAPI/Smart/FieldDetection/1")
+            .reply(200, getPayload);
 
-    nock("http://hikvision.test:80")
-      .put("/ISAPI/Smart/FieldDetection/1")
-      .reply(200, badPutPayload);
+        nock("http://hikvision.test:80")
+            .put("/ISAPI/Smart/FieldDetection/1")
+            .reply(200, badPutPayload);
 
-    const device = new HikvisionDevice(defaultConfig);
+        const device = new HikvisionDevice(defaultConfig);
 
-    try {
-      await device.setInvasionAreaCoordinates([{ x: 0.1, y: 0.2 }]);
-      expect.fail('Function should have thrown');
-    } catch (error) {
-      expect(error).to.be.instanceOf(HttpRequestError);
-    }
-  });
+        try {
+            await device.setInvasionAreaCoordinates([{ x: 0.1, y: 0.2 }]);
+            expect.fail('Function should have thrown');
+        } catch (error) {
+            expect(error).to.be.instanceOf(HttpRequestError);
+        }
+    });
 });
