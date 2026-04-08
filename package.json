@@ -1,5 +1,5 @@
 {
-  "name": "camera-api",
+  "name": "@sentinel-x/camera-api",
   "version": "0.1.0",
   "description": "TypeScript library starter for camera-related APIs.",
   "type": "module",
@@ -21,17 +21,13 @@
   "scripts": {
     "clean": "rimraf dist",
     "build": "npm run clean && tsc -p tsconfig.build.json",
+    "prepare": "npm run build",
     "lint": "eslint . --ext .ts,.mjs",
     "lint:fix": "npm run lint -- --fix",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "npm run build && npm run test:unit",
     "test:unit": "node --import tsx ./node_modules/mocha/bin/mocha.js \"test/**/*.spec.ts\"",
-    "release": "semantic-release",
-    "prepublishOnly": "npm test"
-  },
-  "publishConfig": {
-    "access": "public",
-    "provenance": true
+    "release": "semantic-release"
   },
   "keywords": [
     "typescript",
@@ -44,7 +40,6 @@
     "@eslint/js": "^9.25.1",
     "@semantic-release/commit-analyzer": "^11.1.0",
     "@semantic-release/github": "^10.3.5",
-    "@semantic-release/npm": "^11.0.3",
     "@semantic-release/release-notes-generator": "^12.1.0",
     "@types/chai": "^5.2.1",
     "@types/mocha": "^10.0.10",
