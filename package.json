@@ -9,19 +9,22 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
+      "require": "./dist-cjs/index.js",
       "default": "./dist/index.js"
     }
   },
   "files": [
     "dist",
+    "dist-cjs",
     "README.md"
   ],
   "engines": {
     "node": ">=20.10.0"
   },
   "scripts": {
-    "clean": "rimraf dist",
-    "build": "npm run clean && tsc -p tsconfig.build.json",
+    "clean": "rimraf dist dist-cjs",
+    "build": "npm run clean && tsc -p tsconfig.build.json && tsc -p tsconfig.cjs.json",
+    "postbuild": "node -e \"require('fs').writeFileSync('dist-cjs/package.json', JSON.stringify({ type: 'commonjs' }, null, 2) + '\\\\n')\"",
     "prepare": "npm run build",
     "lint": "eslint . --ext .ts,.mjs",
     "lint:fix": "npm run lint -- --fix",
