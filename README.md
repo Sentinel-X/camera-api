@@ -2,10 +2,16 @@
 
 TypeScript npm library for interacting with Dahua, Hikvision, and Intelbras camera APIs through each vendor's HTTP interface.
 
-Install:
+## Install from GitHub
 
 ```bash
-npm install @sentinelx/camera-api
+npm install github:Sentinel-X/camera-api#main
+```
+
+Prefer installing by tag for stable builds:
+
+```bash
+npm install github:Sentinel-X/camera-api#v0.1.0
 ```
 
 ## Requirements
@@ -47,6 +53,10 @@ npm run build
 ```
 
 Compiled files are emitted to `dist/`.
+
+## Releases
+
+Releases are created on GitHub through `semantic-release` via `.github/workflows/release.yml`.
 
 ## Development checks
 
