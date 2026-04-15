@@ -1,14 +1,10 @@
 import { setTimeout } from 'timers/promises';
-import { HttpRequestError, MissingConfigurationError } from "../errors.js";
-import { Device, InvasionAreaCoordinate } from "../types.js";
-import { BaseDevice } from "./base.js";
+import { HttpRequestError, MissingConfigurationError, NotImplementedError } from "../../errors.js";
+import { InvasionAreaCoordinate } from "../../types.js";
+import { BaseDevice } from "../base.js";
+import { ImageQualityConfiguration, InvasionAreaPoint } from './types.js';
 
-interface InvasionAreaPoint {
-    x: number;
-    y: number;
-}
-
-export class DahuaDevice extends BaseDevice implements Device {
+export class DahuaDevice extends BaseDevice {
     async getInvasionAreaCoordinates(): Promise<InvasionAreaCoordinate[]> {
         const { ruleConfig, ruleNumber } = await this.getAreaInvasionRule();
 
@@ -100,6 +96,82 @@ export class DahuaDevice extends BaseDevice implements Device {
         }
     }
 
+    async setImageQualityConfiguration(configuration: ImageQualityConfiguration) {
+        const config = await this.getConfig('Encode');
+        const queryParams = new URLSearchParams();
+        const channelCount = 4;
+
+        for (let i = 0; i < channelCount; i++) {
+            if (typeof configuration.compression === 'string') {
+                const cameraCompression = configuration.compression === 'h264' ? 'H.264' : 'H.265';
+                const key = `Encode[0].MainFormat[${i}].Video.Compression`;
+
+                if (config.includes(key) && !config.includes(`${key}=${cameraCompression}`)) {
+                    queryParams.append(key, cameraCompression);
+                }
+            }
+
+            if (typeof configuration.fps === 'number') {
+                const key = `Encode[0].MainFormat[${i}].Video.FPS`;
+
+                if (config.includes(key) && !config.includes(`${key}=${configuration.fps}`)) {
+                    queryParams.append(key, configuration.fps.toString());
+                }
+            }
+
+            if (configuration.resolution?.width) {
+                const key = `Encode[0].MainFormat[${i}].Video.Width`;
+
+                if (config.includes(key) && !config.includes(`${key}=${configuration.resolution.width}`)) {
+                    queryParams.append(key, configuration.resolution.width.toString());
+                }
+            }
+
+            if (configuration.resolution?.height) {
+                const key = `Encode[0].MainFormat[${i}].Video.Height`;
+
+                if (config.includes(key) && !config.includes(`${key}=${configuration.resolution.height}`)) {
+                    queryParams.append(key, configuration.resolution.height.toString());
+                }
+            }
+
+            if (typeof configuration.bitrate?.constant === 'number') {
+                const key = `Encode[0].MainFormat[${i}].Video.Bitrate`;
+
+                if (config.includes(key) && !config.includes(`${key}=${configuration.bitrate.constant}`)) {
+                    queryParams.append(key, configuration.bitrate.constant.toString());
+                }
+            }
+
+            if (typeof configuration.shotQuality === 'string') {
+                const maxSupportedQualityRegex = new RegExp(
+                    `table\\.Encode\\[0\\]\\.SnapFormat\\[${i}\\]\\.Video\\.QualityRange=(\\d+)`
+                );
+                const match = config.match(maxSupportedQualityRegex);
+                const maxSupportedQuality = match && Number.isInteger(Number(match[1])) ? Number(match[1]) : undefined;
+
+                if (maxSupportedQuality) {
+                    const qualityMap = {
+                        'minimum': 1,
+                        'medium': Math.max(1, Math.min(Math.floor(maxSupportedQuality / 2), maxSupportedQuality)),
+                        'maximum': maxSupportedQuality
+                    };
+                    const expectedQuality = qualityMap[configuration.shotQuality];
+
+                    const key = `Encode[0].SnapFormat[${i}].Video.Quality`;
+
+                    if (config.includes(key) && !config.includes(`${key}=${expectedQuality}`)) {
+                        queryParams.append(key, expectedQuality.toString());
+                    }
+                }
+            }
+        }
+
+        if (queryParams.size > 0) {
+            await this.setConfigs(queryParams);
+        }
+    }
+
     private async getAreaInvasionRule() {
         const ruleConfig = await this.getConfig('VideoAnalyseRule');
 
@@ -123,6 +195,10 @@ export class DahuaDevice extends BaseDevice implements Device {
         }
 
         return { ruleConfig, ruleNumber }
+    }
+
+    public async reboot() {
+        throw new NotImplementedError('Rebooting Dahua cameras is not supported yet');
     }
 
     private async removeCurrentAreaInvasionCoordinates(ruleConfig: string, ruleNumber: number) {
@@ -209,6 +285,27 @@ export class DahuaDevice extends BaseDevice implements Device {
     private async addConfigs(configs: URLSearchParams) {
         const res = await this.getDigestClient().fetch(
             this.buildURL(`/cgi-bin/configManager.cgi?action=addConfig&${configs.toString()}`),
+            {
+                signal: this.timeoutSignal
+            }
+        );
+
+        if (res.status !== 200 || !(await res.text())?.trim()?.toLowerCase()?.includes('ok')) {
+            throw new HttpRequestError();
+        }
+    }
+
+    private async setConfigs(configs: URLSearchParams, queryOptions?: {
+        encodeSpaces?: boolean;
+    }) {
+        let queryParams = configs.toString();
+
+        if (queryOptions?.encodeSpaces) {
+            queryParams = queryParams.replaceAll('+', '%20');
+        }
+
+        const res = await this.getDigestClient().fetch(
+            this.buildURL(`/cgi-bin/configManager.cgi?action=setConfig&${queryParams}`),
             {
                 signal: this.timeoutSignal
             }

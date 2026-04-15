@@ -18,7 +18,14 @@ export type InvasionAreaCoordinate = {
     y: number;
 }
 
-export interface Device {
-    getInvasionAreaCoordinates(): Promise<InvasionAreaCoordinate[]>;
-    setInvasionAreaCoordinates(coordinates: InvasionAreaCoordinate[]): Promise<void>;
-}
+export type BaseImageQualityConfiguration = {
+    compression?: 'h264' | 'h265';
+    fps?: number;
+    resolution?: {
+        width: number;
+        height: number;
+    };
+    bitrate?: {
+        constant: number;
+    }
+};

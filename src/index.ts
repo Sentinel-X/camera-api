@@ -1,4 +1,4 @@
-import { DahuaDevice } from "./devices/dahua.js";
-import { HikvisionDevice } from "./devices/hikvision.js";
+import { DahuaDevice } from "./devices/dahua/service.js";
+import { HikvisionDevice } from "./devices/hikvision/service.js";
 
 export { DahuaDevice, HikvisionDevice };

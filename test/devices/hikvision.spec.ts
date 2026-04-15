@@ -1,6 +1,7 @@
 import { expect } from "chai";
+import { after, afterEach, before, describe, it } from "mocha";
 import nock from "nock";
-import { HikvisionDevice } from "../../src/devices/hikvision.js";
+import { HikvisionDevice } from "../../src/devices/hikvision/service.js";
 import { HttpRequestError, MissingConfigurationError } from "../../src/errors.js";
 import { DeviceConfiguration } from "../../src/types.js";
 
@@ -162,6 +163,195 @@ describe("HikvisionDevice", () => {
 
         try {
             await device.setInvasionAreaCoordinates([{ x: 0.1, y: 0.2 }]);
+            expect.fail('Function should have thrown');
+        } catch (error) {
+            expect(error).to.be.instanceOf(HttpRequestError);
+        }
+    });
+
+    it("updates image quality configuration and returns needsReboot when camera requires reboot", async () => {
+        const channelsPayload = `<?xml version="1.0" encoding="UTF-8"?>
+      <StreamingChannelList>
+        <StreamingChannel>
+          <id>101</id>
+        </StreamingChannel>
+        <StreamingChannel>
+          <id>102</id>
+        </StreamingChannel>
+      </StreamingChannelList>`;
+
+        const channelPayload = `<?xml version="1.0" encoding="UTF-8"?>
+      <StreamingChannel>
+        <id>101</id>
+        <channelName>old-name</channelName>
+        <Video>
+          <videoCodecType>H.264</videoCodecType>
+          <maxFrameRate>1500</maxFrameRate>
+          <videoResolutionWidth>1280</videoResolutionWidth>
+          <videoResolutionHeight>720</videoResolutionHeight>
+          <constantBitRate>1024</constantBitRate>
+          <vbrUpperCap>1200</vbrUpperCap>
+          <vbrAverageCap>800</vbrAverageCap>
+          <SmartCodec>
+            <enabled>false</enabled>
+          </SmartCodec>
+          <H264Profile>Main</H264Profile>
+        </Video>
+      </StreamingChannel>`;
+
+        const rebootRequiredPayload = `<?xml version="1.0" encoding="UTF-8"?>
+      <ResponseStatus>
+        <statusCode>7</statusCode>
+        <subStatusCode>rebootRequired</subStatusCode>
+      </ResponseStatus>`;
+
+        let putBody = "";
+
+        nock("http://hikvision.test:80")
+            .get("/ISAPI/Streaming/channels")
+            .reply(200, channelsPayload);
+
+        nock("http://hikvision.test:80")
+            .get("/ISAPI/Streaming/channels/101")
+            .reply(200, channelPayload);
+
+        nock("http://hikvision.test:80")
+            .put("/ISAPI/Streaming/channels/101", (body: string) => {
+                putBody = String(body);
+                return true;
+            })
+            .reply(200, rebootRequiredPayload);
+
+        const device = new HikvisionDevice({
+            ...defaultConfig,
+            serialNumber: "SERIAL-123"
+        });
+
+        const result = await device.setImageQualityConfiguration({
+            compression: "h265",
+            fps: 20,
+            resolution: {
+                width: 1920,
+                height: 1080
+            },
+            bitrate: {
+                constant: 2048,
+                variableCap: 2200,
+                variableAverage: 1100
+            }
+        });
+
+        expect(result).to.deep.equal({ needsReboot: true });
+        expect(putBody).to.include("<channelName>SERIAL-123</channelName>");
+        expect(putBody).to.include("<videoCodecType>H.265</videoCodecType>");
+        expect(putBody).to.include("<H265Profile>Main</H265Profile>");
+        expect(putBody).to.not.include("<H264Profile>");
+        expect(putBody).to.include("<maxFrameRate>2000</maxFrameRate>");
+        expect(putBody).to.include("<videoResolutionWidth>1920</videoResolutionWidth>");
+        expect(putBody).to.include("<videoResolutionHeight>1080</videoResolutionHeight>");
+        expect(putBody).to.include("<constantBitRate>2048</constantBitRate>");
+        expect(putBody).to.include("<vbrUpperCap>2200</vbrUpperCap>");
+        expect(putBody).to.include("<vbrAverageCap>1100</vbrAverageCap>");
+    });
+
+    it("returns needsReboot=false when no channel update is required", async () => {
+        const channelsPayload = `<?xml version="1.0" encoding="UTF-8"?>
+      <StreamingChannelList>
+        <StreamingChannel>
+          <id>101</id>
+        </StreamingChannel>
+      </StreamingChannelList>`;
+
+        const channelPayload = `<?xml version="1.0" encoding="UTF-8"?>
+      <StreamingChannel>
+        <id>101</id>
+        <channelName>camera-1</channelName>
+        <Video>
+          <videoCodecType>H.265</videoCodecType>
+          <maxFrameRate>2000</maxFrameRate>
+          <videoResolutionWidth>1920</videoResolutionWidth>
+          <videoResolutionHeight>1080</videoResolutionHeight>
+          <constantBitRate>2048</constantBitRate>
+          <vbrUpperCap>2200</vbrUpperCap>
+          <vbrAverageCap>1100</vbrAverageCap>
+        </Video>
+      </StreamingChannel>`;
+
+        nock("http://hikvision.test:80")
+            .get("/ISAPI/Streaming/channels")
+            .reply(200, channelsPayload);
+
+        nock("http://hikvision.test:80")
+            .get("/ISAPI/Streaming/channels/101")
+            .reply(200, channelPayload);
+
+        const device = new HikvisionDevice(defaultConfig);
+
+        const result = await device.setImageQualityConfiguration({
+            compression: "h265",
+            fps: 20,
+            resolution: {
+                width: 1920,
+                height: 1080
+            },
+            bitrate: {
+                constant: 2048,
+                variableCap: 2200,
+                variableAverage: 1100
+            }
+        });
+
+        expect(result).to.deep.equal({ needsReboot: false });
+    });
+
+    it("throws HttpRequestError when channel update response is invalid", async () => {
+        const channelsPayload = `<?xml version="1.0" encoding="UTF-8"?>
+      <StreamingChannelList>
+        <StreamingChannel>
+          <id>101</id>
+        </StreamingChannel>
+      </StreamingChannelList>`;
+
+        const channelPayload = `<?xml version="1.0" encoding="UTF-8"?>
+      <StreamingChannel>
+        <id>101</id>
+        <channelName>camera-1</channelName>
+        <Video>
+          <videoCodecType>H.264</videoCodecType>
+          <maxFrameRate>1500</maxFrameRate>
+          <videoResolutionWidth>1280</videoResolutionWidth>
+          <videoResolutionHeight>720</videoResolutionHeight>
+          <constantBitRate>1024</constantBitRate>
+          <vbrUpperCap>1200</vbrUpperCap>
+          <vbrAverageCap>800</vbrAverageCap>
+        </Video>
+      </StreamingChannel>`;
+
+        const invalidUpdatePayload = `<?xml version="1.0" encoding="UTF-8"?>
+      <ResponseStatus>
+        <statusCode>2</statusCode>
+        <subStatusCode>error</subStatusCode>
+      </ResponseStatus>`;
+
+        nock("http://hikvision.test:80")
+            .get("/ISAPI/Streaming/channels")
+            .reply(200, channelsPayload);
+
+        nock("http://hikvision.test:80")
+            .get("/ISAPI/Streaming/channels/101")
+            .reply(200, channelPayload);
+
+        nock("http://hikvision.test:80")
+            .put("/ISAPI/Streaming/channels/101")
+            .reply(200, invalidUpdatePayload);
+
+        const device = new HikvisionDevice(defaultConfig);
+
+        try {
+            await device.setImageQualityConfiguration({
+                compression: "h265",
+                fps: 20
+            });
             expect.fail('Function should have thrown');
         } catch (error) {
             expect(error).to.be.instanceOf(HttpRequestError);
