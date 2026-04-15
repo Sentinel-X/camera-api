@@ -234,17 +234,17 @@ export class HikvisionDevice extends BaseDevice {
                 }
             }
 
-            if (configuration.bitrate?.constant && constantBitRate && configuration.bitrate.constant !== Number(constantBitRate)) {
+            if (typeof configuration.bitrate?.constant === 'number' && constantBitRate && configuration.bitrate.constant !== Number(constantBitRate)) {
                 changed = true;
                 channelData.StreamingChannel.Video.constantBitRate = configuration.bitrate.constant;
             }
 
-            if (configuration.bitrate?.variableCap && vbrUpperCap && configuration.bitrate.variableCap !== Number(vbrUpperCap)) {
+            if (typeof configuration.bitrate?.variableCap === 'number' && vbrUpperCap && configuration.bitrate.variableCap !== Number(vbrUpperCap)) {
                 changed = true;
                 channelData.StreamingChannel.Video.vbrUpperCap = configuration.bitrate.variableCap;
             }
 
-            if (configuration.bitrate?.variableAverage && vbrAverageCap && configuration.bitrate.variableAverage !== Number(vbrAverageCap)) {
+            if (typeof configuration.bitrate?.variableAverage === 'number' && vbrAverageCap && configuration.bitrate.variableAverage !== Number(vbrAverageCap)) {
                 changed = true;
                 channelData.StreamingChannel.Video.vbrAverageCap = configuration.bitrate.variableAverage;
             }
