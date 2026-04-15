@@ -256,7 +256,7 @@ export class HikvisionDevice extends BaseDevice {
             }
 
             // Some cameras do not allow to change to H.265 and enable H.265+ at the same time.
-            if (typeof configuration.smartCodec === 'boolean' && channelData.StreamingChannel.Video.videoCodecType === 'H.265' && smartCodec) {
+            if (typeof configuration.smartCodec === 'boolean' && channelData.StreamingChannel.Video.videoCodecType === 'H.265' && smartCodec && smartCodec.enabled !== configuration.smartCodec) {
                 channelData.StreamingChannel.Video.SmartCodec = { enabled: configuration.smartCodec };
 
                 const rebootRequired = await this.updateCameraChannel(channel.id, channelData);

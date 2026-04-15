@@ -304,6 +304,107 @@ describe("HikvisionDevice", () => {
         expect(result).to.deep.equal({ needsReboot: false });
     });
 
+    it("skips smart codec update when enabled value is already set to requested value", async () => {
+        const channelsPayload = `<?xml version="1.0" encoding="UTF-8"?>
+      <StreamingChannelList>
+        <StreamingChannel>
+          <id>101</id>
+        </StreamingChannel>
+      </StreamingChannelList>`;
+
+        const channelPayload = `<?xml version="1.0" encoding="UTF-8"?>
+      <StreamingChannel>
+        <id>101</id>
+        <channelName>camera-1</channelName>
+        <Video>
+          <videoCodecType>H.265</videoCodecType>
+          <maxFrameRate>2000</maxFrameRate>
+          <videoResolutionWidth>1920</videoResolutionWidth>
+          <videoResolutionHeight>1080</videoResolutionHeight>
+          <constantBitRate>2048</constantBitRate>
+          <vbrUpperCap>2200</vbrUpperCap>
+          <vbrAverageCap>1100</vbrAverageCap>
+          <SmartCodec>
+            <enabled>true</enabled>
+          </SmartCodec>
+        </Video>
+      </StreamingChannel>`;
+
+        nock("http://hikvision.test:80")
+            .get("/ISAPI/Streaming/channels")
+            .reply(200, channelsPayload);
+
+        nock("http://hikvision.test:80")
+            .get("/ISAPI/Streaming/channels/101")
+            .reply(200, channelPayload);
+
+        const device = new HikvisionDevice(defaultConfig);
+
+        // smartCodec is already true, so no PUT should be sent
+        const result = await device.setImageQualityConfiguration({
+            smartCodec: true
+        });
+
+        expect(result).to.deep.equal({ needsReboot: false });
+    });
+
+    it("sends smart codec update when enabled value differs from requested value", async () => {
+        const channelsPayload = `<?xml version="1.0" encoding="UTF-8"?>
+      <StreamingChannelList>
+        <StreamingChannel>
+          <id>101</id>
+        </StreamingChannel>
+      </StreamingChannelList>`;
+
+        const channelPayload = `<?xml version="1.0" encoding="UTF-8"?>
+      <StreamingChannel>
+        <id>101</id>
+        <channelName>camera-1</channelName>
+        <Video>
+          <videoCodecType>H.265</videoCodecType>
+          <maxFrameRate>2000</maxFrameRate>
+          <videoResolutionWidth>1920</videoResolutionWidth>
+          <videoResolutionHeight>1080</videoResolutionHeight>
+          <SmartCodec>
+            <enabled>false</enabled>
+          </SmartCodec>
+        </Video>
+      </StreamingChannel>`;
+
+        const successPayload = `<?xml version="1.0" encoding="UTF-8"?>
+      <ResponseStatus>
+        <statusCode>1</statusCode>
+        <subStatusCode>ok</subStatusCode>
+      </ResponseStatus>`;
+
+        let putBody = "";
+
+        nock("http://hikvision.test:80")
+            .get("/ISAPI/Streaming/channels")
+            .reply(200, channelsPayload);
+
+        nock("http://hikvision.test:80")
+            .get("/ISAPI/Streaming/channels/101")
+            .reply(200, channelPayload);
+
+        nock("http://hikvision.test:80")
+            .put("/ISAPI/Streaming/channels/101", (body: string) => {
+                putBody = String(body);
+                return true;
+            })
+            .reply(200, successPayload);
+
+        const device = new HikvisionDevice(defaultConfig);
+
+        // smartCodec is false but we request true, so a PUT should be sent
+        const result = await device.setImageQualityConfiguration({
+            smartCodec: true
+        });
+
+        expect(result).to.deep.equal({ needsReboot: false });
+        expect(putBody).to.include("<enabled>true</enabled>");
+    });
+
     it("throws HttpRequestError when channel update response is invalid", async () => {
         const channelsPayload = `<?xml version="1.0" encoding="UTF-8"?>
       <StreamingChannelList>
