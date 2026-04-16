@@ -31,7 +31,9 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "npm run build && npm run test:unit",
     "test:unit": "node --import tsx ./node_modules/mocha/bin/mocha.js \"test/**/*.spec.ts\"",
-    "release": "semantic-release"
+    "release": "semantic-release",
+    "test:coverage": "c8 --reporter=text --reporter=html npm run test:unit",
+    "coverage:open": "node -e \"const { execSync } = require('node:child_process'); const opener = process.platform === 'darwin' ? 'open' : process.platform === 'linux' ? 'xdg-open' : null; if (!opener) { console.error('Unsupported platform for coverage:open'); process.exit(1); } execSync(opener + ' coverage/index.html', { stdio: 'inherit' });\""
   },
   "keywords": [
     "typescript",
@@ -48,6 +50,7 @@
     "@types/chai": "^5.2.1",
     "@types/mocha": "^10.0.10",
     "@types/node-fetch": "^2.6.13",
+    "c8": "^11.0.0",
     "chai": "^5.2.1",
     "eslint": "^9.25.1",
     "globals": "^16.0.0",
@@ -63,6 +66,8 @@
     "digest-fetch": "github:Sentinel-X/digest-fetch#2.0.5",
     "fast-xml-parser": "^5.5.10",
     "fetch-retry": "^6.0.0",
+    "moment": "^2.30.1",
+    "moment-timezone": "^0.6.1",
     "node-fetch": "^2.7.0"
   }
 }
