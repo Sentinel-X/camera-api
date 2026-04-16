@@ -302,4 +302,240 @@ describe("DahuaDevice", () => {
             expect(error).to.be.instanceOf(HttpRequestError);
         }
     });
+
+    it("updates time configuration for locales and ntp", async () => {
+        const localesPayload = [
+            "table.Locales.DSTEnable=false",
+            "table.Locales.TimeFormat=dd-MM-yyyy HH:mm:ss"
+        ].join("\n");
+
+        const ntpPayload = [
+            "table.NTP.Enable=false",
+            "table.NTP.Address=time.windows.com",
+            "table.NTP.Port=123",
+            "table.NTP.UpdatePeriod=10",
+            "table.NTP.TimeZone=22",
+            "table.NTP.TimeZoneDesc=Brasilia"
+        ].join("\n");
+
+        nock("http://camera.test:80")
+            .get("/cgi-bin/configManager.cgi")
+            .query({ action: "getConfig", name: "Locales" })
+            .reply(200, localesPayload);
+
+        nock("http://camera.test:80")
+            .get("/cgi-bin/configManager.cgi")
+            .query({
+                action: "setConfig",
+                "Locales.TimeFormat": "MM/dd/yyyy HH:mm:ss",
+                "Locales.DSTEnable": "true"
+            })
+            .reply(200, "OK");
+
+        nock("http://camera.test:80")
+            .get("/cgi-bin/configManager.cgi")
+            .query({ action: "getConfig", name: "NTP" })
+            .reply(200, ntpPayload);
+
+        nock("http://camera.test:80")
+            .get("/cgi-bin/configManager.cgi")
+            .query({
+                action: "setConfig",
+                "NTP.Enable": "true",
+                "NTP.Address": "pool.ntp.org",
+                "NTP.Port": "124",
+                "NTP.UpdatePeriod": "30",
+                "NTP.TimeZone": "0",
+                "NTP.TimeZoneDesc": "UTC-0"
+            })
+            .reply(200, "OK");
+
+        const device = new DahuaDevice(defaultConfig);
+
+        await device.setTimeConfiguration({
+            timeFormat: "MM/dd/yyyy HH:mm:ss",
+            dst: {
+                enabled: true
+            },
+            ntp: {
+                enabled: true,
+                server: "pool.ntp.org",
+                port: 124,
+                interval: 30
+            },
+            timeZoneId: 0,
+            timezoneName: "UTC-0"
+        });
+    });
+
+    it("does not call setConfig when time configuration is already up to date", async () => {
+        const localesPayload = [
+            "table.Locales.DSTEnable=true",
+            "table.Locales.TimeFormat=MM/dd/yyyy HH:mm:ss"
+        ].join("\n") + "\n";
+
+        const ntpPayload = [
+            "table.NTP.Enable=true",
+            "table.NTP.Address=pool.ntp.org",
+            "table.NTP.Port=124",
+            "table.NTP.UpdatePeriod=30",
+            "table.NTP.TimeZone=0",
+            "table.NTP.TimeZoneDesc=UTC-0"
+        ].join("\n") + "\n";
+
+        nock("http://camera.test:80")
+            .get("/cgi-bin/configManager.cgi")
+            .query({ action: "getConfig", name: "Locales" })
+            .reply(200, localesPayload);
+
+        nock("http://camera.test:80")
+            .get("/cgi-bin/configManager.cgi")
+            .query({ action: "getConfig", name: "NTP" })
+            .reply(200, ntpPayload);
+
+        const device = new DahuaDevice(defaultConfig);
+
+        await device.setTimeConfiguration({
+            timeFormat: "MM/dd/yyyy HH:mm:ss",
+            dst: {
+                enabled: true
+            },
+            ntp: {
+                enabled: true,
+                server: "pool.ntp.org",
+                port: 124,
+                interval: 30
+            },
+            timeZoneId: 0,
+            timezoneName: "UTC-0"
+        });
+    });
+
+    it("throws HttpRequestError when setTimeConfiguration receives non-ok response", async () => {
+        const localesPayload = [
+            "table.Locales.DSTEnable=false",
+            "table.Locales.TimeFormat=dd-MM-yyyy HH:mm:ss"
+        ].join("\n");
+
+        nock("http://camera.test:80")
+            .get("/cgi-bin/configManager.cgi")
+            .query({ action: "getConfig", name: "Locales" })
+            .reply(200, localesPayload);
+
+        nock("http://camera.test:80")
+            .get("/cgi-bin/configManager.cgi")
+            .query((queryObject) => queryObject.action === "setConfig")
+            .reply(200, "error");
+
+        const device = new DahuaDevice(defaultConfig);
+
+        try {
+            await device.setTimeConfiguration({
+                timeFormat: "MM/dd/yyyy HH:mm:ss"
+            });
+            expect.fail('Function should have thrown');
+        } catch (error) {
+            expect(error).to.be.instanceOf(HttpRequestError);
+        }
+    });
+
+    it("returns current time converted using camera timezone", async () => {
+        const ntpPayload = [
+            "table.NTP.TimeZone=22",
+            "table.NTP.TimeZoneDesc=Brasilia"
+        ].join("\n");
+
+        nock("http://camera.test:80")
+            .get("/cgi-bin/configManager.cgi")
+            .query({ action: "getConfig", name: "NTP" })
+            .reply(200, ntpPayload);
+
+        nock("http://camera.test:80")
+            .get("/cgi-bin/global.cgi")
+            .query({ action: "getCurrentTime" })
+            .reply(200, "result=2026-04-16 00:18:06");
+
+        const device = new DahuaDevice(defaultConfig);
+
+        const currentTime = await device.getCurrentTime();
+
+        expect(currentTime.toISOString()).to.equal("2026-04-16T03:18:06.000Z");
+    });
+
+    it("throws MissingConfigurationError when timezone is not configured", async () => {
+        const ntpPayload = [
+            "table.NTP.Enable=true",
+            "table.NTP.Address=time.windows.com"
+        ].join("\n");
+
+        nock("http://camera.test:80")
+            .get("/cgi-bin/configManager.cgi")
+            .query({ action: "getConfig", name: "NTP" })
+            .reply(200, ntpPayload);
+
+        const device = new DahuaDevice(defaultConfig);
+
+        try {
+            await device.getCurrentTime();
+            expect.fail('Function should have thrown');
+        } catch (error) {
+            expect(error).to.be.instanceOf(MissingConfigurationError);
+        }
+    });
+
+    it("throws HttpRequestError when getCurrentTime request fails", async () => {
+        const ntpPayload = [
+            "table.NTP.TimeZone=22",
+            "table.NTP.TimeZoneDesc=Brasilia"
+        ].join("\n");
+
+        nock("http://camera.test:80")
+            .get("/cgi-bin/configManager.cgi")
+            .query({ action: "getConfig", name: "NTP" })
+            .reply(200, ntpPayload);
+
+        nock("http://camera.test:80")
+            .get("/cgi-bin/global.cgi")
+            .query({ action: "getCurrentTime" })
+            .reply(500, "error");
+
+        const device = new DahuaDevice(defaultConfig);
+
+        try {
+            await device.getCurrentTime();
+            expect.fail('Function should have thrown');
+        } catch (error) {
+            expect(error).to.be.instanceOf(HttpRequestError);
+        }
+    });
+
+    it("sets current time using utc date value", async () => {
+        nock("http://camera.test:80")
+            .get("/cgi-bin/global.cgi")
+            .query({
+                action: "setCurrentTime",
+                time: "2025-03-13 23:09:25"
+            })
+            .reply(200, "OK");
+
+        const device = new DahuaDevice(defaultConfig);
+
+        await device.setCurrentTime(new Date("2025-03-13T23:09:25.000Z"));
+    });
+
+    it("throws HttpRequestError when setCurrentTime request fails", async () => {
+        nock("http://camera.test:80")
+            .get("/cgi-bin/global.cgi")
+            .query((queryObject) => queryObject.action === "setCurrentTime")
+            .reply(500, "error");
+
+        const device = new DahuaDevice(defaultConfig);
+
+        try {
+            await device.setCurrentTime(new Date("2025-03-13T23:09:25.000Z"));
+            expect.fail('Function should have thrown');
+        } catch (error) {
+            expect(error).to.be.instanceOf(HttpRequestError);
+        }
+    });
 });

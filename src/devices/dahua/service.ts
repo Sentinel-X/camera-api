@@ -1,8 +1,10 @@
 import { setTimeout } from 'timers/promises';
+import moment from 'moment-timezone';
 import { HttpRequestError, MissingConfigurationError, NotImplementedError } from "../../errors.js";
 import { InvasionAreaCoordinate } from "../../types.js";
 import { BaseDevice } from "../base.js";
-import { ImageQualityConfiguration, InvasionAreaPoint } from './types.js';
+import { ImageQualityConfiguration, InvasionAreaPoint, TimeConfiguration } from './types.js';
+import { timezones } from './constants.js';
 
 export class DahuaDevice extends BaseDevice {
     async getInvasionAreaCoordinates(): Promise<InvasionAreaCoordinate[]> {
@@ -172,6 +174,94 @@ export class DahuaDevice extends BaseDevice {
         }
     }
 
+    async setTimeConfiguration(timeConfiguration: TimeConfiguration) {
+        const localeQueryParams = new URLSearchParams();
+        const localesConfig = await this.getConfig('Locales');
+
+        if (typeof timeConfiguration.timeFormat === 'string' && !this.stringIncludesWithLineBreak(localesConfig, `Locales.TimeFormat=${timeConfiguration.timeFormat}`)) {
+            localeQueryParams.append('Locales.TimeFormat', timeConfiguration.timeFormat);
+        }
+
+        if (typeof timeConfiguration.dst?.enabled === 'boolean' && !this.stringIncludesWithLineBreak(localesConfig, `Locales.DSTEnable=${timeConfiguration.dst.enabled}`)) {
+            localeQueryParams.append('Locales.DSTEnable', timeConfiguration.dst.enabled.toString());
+        }
+
+        if (localeQueryParams.size > 0) {
+            await this.setConfigs(localeQueryParams, { encodeSpaces: true });
+        }
+
+        const ntpQueryParams = new URLSearchParams();
+        const ntpConfig = await this.getConfig('NTP');
+
+        if (typeof timeConfiguration.ntp?.enabled === 'boolean' && !this.stringIncludesWithLineBreak(ntpConfig, `NTP.Enable=${timeConfiguration.ntp.enabled}`)) {
+            ntpQueryParams.append('NTP.Enable', timeConfiguration.ntp.enabled.toString());
+        }
+
+        if (typeof timeConfiguration.ntp?.server === 'string' && !this.stringIncludesWithLineBreak(ntpConfig, `NTP.Address=${timeConfiguration.ntp.server}`)) {
+            ntpQueryParams.append('NTP.Address', timeConfiguration.ntp.server);
+        }
+
+        if (typeof timeConfiguration.ntp?.port === 'number' && !this.stringIncludesWithLineBreak(ntpConfig, `NTP.Port=${timeConfiguration.ntp.port}`)) {
+            ntpQueryParams.append('NTP.Port', timeConfiguration.ntp.port.toString());
+        }
+
+        if (typeof timeConfiguration.ntp?.interval === 'number' && !this.stringIncludesWithLineBreak(ntpConfig, `NTP.UpdatePeriod=${timeConfiguration.ntp.interval}`)) {
+            ntpQueryParams.append('NTP.UpdatePeriod', timeConfiguration.ntp.interval.toString());
+        }
+
+        if (typeof timeConfiguration.timeZoneId === 'number' && !this.stringIncludesWithLineBreak(ntpConfig, `NTP.TimeZone=${timeConfiguration.timeZoneId}`)) {
+            ntpQueryParams.append('NTP.TimeZone', timeConfiguration.timeZoneId.toString());
+        }
+
+        if (typeof timeConfiguration.timezoneName === 'string' && !this.stringIncludesWithLineBreak(ntpConfig, `NTP.TimeZoneDesc=${timeConfiguration.timezoneName}`)) {
+            ntpQueryParams.append('NTP.TimeZoneDesc', timeConfiguration.timezoneName);
+        }
+
+        if (ntpQueryParams.size > 0) {
+            await this.setConfigs(ntpQueryParams);
+        }
+    }
+
+    async getCurrentTime(): Promise<Date> {
+        const ntpConfig = await this.getConfig('NTP');
+        const timezoneId: string = ntpConfig.match(/NTP\.TimeZone=(\d+)/)?.[1];
+
+        if (!timezoneId || !timezones[timezoneId]) {
+            throw new MissingConfigurationError('Unable to determine camera timezone. Please set the timezone configuration before getting the current time.');
+        }
+
+        const res = await this.getDigestClient().fetch(
+            this.buildURL(`/cgi-bin/global.cgi?action=getCurrentTime`),
+            {
+                signal: this.timeoutSignal
+            }
+        );
+
+        if (res.status !== 200) {
+            throw new HttpRequestError();
+        }
+
+        const cameraTime = (await res.text()).split('=')[1].replace(/(?:\r\n|\r|\n)/g, '').trim();
+        const timezoneOffset = timezones[timezoneId].offset;
+
+        return moment(cameraTime, 'YYYY-MM-DD HH:mm:ss').utcOffset(timezoneOffset, true).toDate();
+    }
+
+    async setCurrentTime(date: Date) {
+        const currentTime = moment.utc(date).format('YYYY-MM-DD HH:mm:ss');
+
+        const timeRes = await this.getDigestClient().fetch(
+            this.buildURL(`/cgi-bin/global.cgi?action=setCurrentTime&time=${currentTime}`),
+            {
+                signal: this.timeoutSignal
+            }
+        );
+
+        if (timeRes.status !== 200) {
+            throw new HttpRequestError();
+        }
+    }
+
     private async getAreaInvasionRule() {
         const ruleConfig = await this.getConfig('VideoAnalyseRule');
 
@@ -314,5 +404,9 @@ export class DahuaDevice extends BaseDevice {
         if (res.status !== 200 || !(await res.text())?.trim()?.toLowerCase()?.includes('ok')) {
             throw new HttpRequestError();
         }
+    }
+
+    private stringIncludesWithLineBreak(text: string, match: string) {
+        return text.includes(match + '\r\n') || text.includes(match + '\r') || text.includes(match + '\n');
     }
 }

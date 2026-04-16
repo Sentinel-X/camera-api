@@ -458,4 +458,282 @@ describe("HikvisionDevice", () => {
             expect(error).to.be.instanceOf(HttpRequestError);
         }
     });
+
+    it("updates time configuration in manual mode", async () => {
+        let timeBody = "";
+
+        nock("http://hikvision.test:80")
+            .put("/ISAPI/System/time", (body: string) => {
+                timeBody = String(body);
+                return true;
+            })
+            .reply(200, "");
+
+        const device = new HikvisionDevice(defaultConfig);
+
+        await device.setTimeConfiguration({
+            ntp: {
+                enabled: false
+            },
+            timezone: "GMT-03:00"
+        });
+
+        expect(timeBody).to.include("<timeMode>manual</timeMode>");
+        expect(timeBody).to.include("<timeZone>GMT-03:00</timeZone>");
+        expect(timeBody).to.match(/<localTime>.+<\/localTime>/);
+    });
+
+    it("updates time configuration in ntp mode", async () => {
+        let timeBody = "";
+        let ntpBody = "";
+
+        nock("http://hikvision.test:80")
+            .put("/ISAPI/System/time", (body: string) => {
+                timeBody = String(body);
+                return true;
+            })
+            .reply(200, "");
+
+        nock("http://hikvision.test:80")
+            .put("/ISAPI/System/time/ntpServers/1", (body: string) => {
+                ntpBody = String(body);
+                return true;
+            })
+            .reply(200, "");
+
+        const device = new HikvisionDevice(defaultConfig);
+
+        await device.setTimeConfiguration({
+            ntp: {
+                enabled: true,
+                server: "time.google.com",
+                port: 123,
+                interval: 60
+            },
+            timezone: "GMT-03:00"
+        });
+
+        expect(timeBody).to.include("<timeMode>NTP</timeMode>");
+        expect(timeBody).to.include("<timeZone>GMT-03:00</timeZone>");
+        expect(timeBody).to.not.include("<localTime>");
+
+        expect(ntpBody).to.include("<NTPServer>");
+        expect(ntpBody).to.include("<id>1</id>");
+        expect(ntpBody).to.include("<addressingFormatType>hostname</addressingFormatType>");
+        expect(ntpBody).to.include("<hostName>time.google.com</hostName>");
+        expect(ntpBody).to.include("<portNo>123</portNo>");
+        expect(ntpBody).to.include("<synchronizeInterval>60</synchronizeInterval>");
+    });
+
+    it("throws HttpRequestError when time update request fails", async () => {
+        nock("http://hikvision.test:80")
+            .put("/ISAPI/System/time")
+            .reply(500, "error");
+
+        const device = new HikvisionDevice(defaultConfig);
+
+        try {
+            await device.setTimeConfiguration({
+                ntp: {
+                    enabled: false
+                },
+                timezone: "GMT-03:00"
+            });
+            expect.fail('Function should have thrown');
+        } catch (error) {
+            expect(error).to.be.instanceOf(HttpRequestError);
+        }
+    });
+
+    it("throws HttpRequestError when ntp update request fails", async () => {
+        nock("http://hikvision.test:80")
+            .put("/ISAPI/System/time")
+            .reply(200, "");
+
+        nock("http://hikvision.test:80")
+            .put("/ISAPI/System/time/ntpServers/1")
+            .reply(500, "error");
+
+        const device = new HikvisionDevice(defaultConfig);
+
+        try {
+            await device.setTimeConfiguration({
+                ntp: {
+                    enabled: true,
+                    server: "time.google.com",
+                    port: 123,
+                    interval: 60
+                },
+                timezone: "GMT-03:00"
+            });
+            expect.fail('Function should have thrown');
+        } catch (error) {
+            expect(error).to.be.instanceOf(HttpRequestError);
+        }
+    });
+
+    it("returns current time from camera xml", async () => {
+        const timePayload = `<?xml version="1.0" encoding="UTF-8"?>
+        <Time>
+        <timeMode>manual</timeMode>
+        <localTime>2026-04-16T02:28:28-03:00</localTime>
+        <timeZone>CST+3:00:00</timeZone>
+        </Time>`;
+
+        nock("http://hikvision.test:80")
+            .get("/ISAPI/System/time")
+            .reply(200, timePayload);
+
+        const device = new HikvisionDevice(defaultConfig);
+
+        const currentTime = await device.getCurrentTime();
+
+        expect(currentTime.toISOString()).to.equal("2026-04-16T05:28:28.000Z");
+    });
+
+    it("throws HttpRequestError when getCurrentTime request fails", async () => {
+        nock("http://hikvision.test:80")
+            .get("/ISAPI/System/time")
+            .reply(500, "error");
+
+        const device = new HikvisionDevice(defaultConfig);
+
+        try {
+            await device.getCurrentTime();
+            expect.fail('Function should have thrown');
+        } catch (error) {
+            expect(error).to.be.instanceOf(HttpRequestError);
+        }
+    });
+
+    it("throws HttpRequestError when camera returns invalid current time", async () => {
+        const timePayload = `<?xml version="1.0" encoding="UTF-8"?>
+        <Time>
+        <timeMode>manual</timeMode>
+        <localTime>not-a-date</localTime>
+        <timeZone>CST+3:00:00</timeZone>
+        </Time>`;
+
+        nock("http://hikvision.test:80")
+            .get("/ISAPI/System/time")
+            .reply(200, timePayload);
+
+        const device = new HikvisionDevice(defaultConfig);
+
+        try {
+            await device.getCurrentTime();
+            expect.fail('Function should have thrown');
+        } catch (error) {
+            expect(error).to.be.instanceOf(HttpRequestError);
+        }
+    });
+
+    it("sets current time preserving camera time configuration fields", async () => {
+        const getPayload = `<?xml version="1.0" encoding="UTF-8"?>
+        <Time>
+        <timeMode>manual</timeMode>
+        <localTime>2026-04-16T02:28:28-03:00</localTime>
+        <timeZone>GMT-03:00</timeZone>
+        </Time>`;
+
+        let putBody = "";
+
+        nock("http://hikvision.test:80")
+            .get("/ISAPI/System/time")
+            .reply(200, getPayload);
+
+        nock("http://hikvision.test:80")
+            .put("/ISAPI/System/time", (body: string) => {
+                putBody = String(body);
+                return true;
+            })
+            .reply(200, "");
+
+        const device = new HikvisionDevice(defaultConfig);
+
+        await device.setCurrentTime(new Date("2026-04-16T05:30:35.000Z"));
+
+        expect(putBody).to.include("<timeMode>manual</timeMode>");
+        expect(putBody).to.include("<timeZone>GMT-03:00</timeZone>");
+        expect(putBody).to.match(/<localTime>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?(?:Z|[+-]\d{2}:\d{2})<\/localTime>/);
+        expect(putBody).to.not.include("<localTime>2026-04-16T02:28:28-03:00</localTime>");
+    });
+
+    it("throws HttpRequestError when setCurrentTime cannot read current configuration", async () => {
+        nock("http://hikvision.test:80")
+            .get("/ISAPI/System/time")
+            .reply(500, "error");
+
+        const device = new HikvisionDevice(defaultConfig);
+
+        try {
+            await device.setCurrentTime(new Date("2026-04-16T05:30:35.000Z"));
+            expect.fail('Function should have thrown');
+        } catch (error) {
+            expect(error).to.be.instanceOf(HttpRequestError);
+        }
+    });
+
+    it("throws HttpRequestError when setCurrentTime update request fails", async () => {
+        const getPayload = `<?xml version="1.0" encoding="UTF-8"?>
+        <Time>
+        <timeMode>manual</timeMode>
+        <localTime>2026-04-16T02:28:28-03:00</localTime>
+        <timeZone>GMT-03:00</timeZone>
+        </Time>`;
+
+        nock("http://hikvision.test:80")
+            .get("/ISAPI/System/time")
+            .reply(200, getPayload);
+
+        nock("http://hikvision.test:80")
+            .put("/ISAPI/System/time")
+            .reply(500, "error");
+
+        const device = new HikvisionDevice(defaultConfig);
+
+        try {
+            await device.setCurrentTime(new Date("2026-04-16T05:30:35.000Z"));
+            expect.fail('Function should have thrown');
+        } catch (error) {
+            expect(error).to.be.instanceOf(HttpRequestError);
+        }
+    });
+
+      it("reboots camera when response is ok", async () => {
+        const rebootPayload = `<?xml version="1.0" encoding="UTF-8"?>
+        <ResponseStatus>
+        <statusCode>1</statusCode>
+        <subStatusCode>ok</subStatusCode>
+        </ResponseStatus>`;
+
+        nock("http://hikvision.test:80")
+          .put("/ISAPI/System/reboot")
+          .reply(200, rebootPayload);
+
+        const device = new HikvisionDevice(defaultConfig);
+
+        await device.reboot();
+      });
+
+      it("throws HttpRequestError when reboot response is invalid", async () => {
+        const rebootPayload = `<?xml version="1.0" encoding="UTF-8"?>
+        <ResponseStatus>
+        <statusCode>2</statusCode>
+        <subStatusCode>error</subStatusCode>
+        </ResponseStatus>`;
+
+        nock("http://hikvision.test:80")
+          .put("/ISAPI/System/reboot")
+          .reply(200, rebootPayload);
+
+        const device = new HikvisionDevice(defaultConfig);
+
+        try {
+          await device.reboot();
+          expect.fail('Function should have thrown');
+        } catch (error) {
+          expect(error).to.be.instanceOf(HttpRequestError);
+        }
+      });
 });

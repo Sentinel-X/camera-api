@@ -1,8 +1,9 @@
 import { XMLParser, XMLBuilder } from 'fast-xml-parser';
+import moment from 'moment-timezone';
 import { BaseDevice } from "../base.js";
 import { HttpRequestError, MissingConfigurationError } from "../../errors.js";
 import { DeviceConfiguration, InvasionAreaCoordinate } from "../../types.js";
-import { ImageQualityConfiguration } from "./types.js";
+import { ImageQualityConfiguration, TimeConfiguration } from "./types.js";
 
 type FieldDetectionRegion = {
     id?: number | string;
@@ -267,6 +268,116 @@ export class HikvisionDevice extends BaseDevice {
         return { needsReboot };
     }
 
+    async setTimeConfiguration(timeConfiguration: TimeConfiguration) {
+        const configuration: Record<string, unknown> = {
+            timeMode: timeConfiguration.ntp.enabled ? 'NTP' : 'manual',
+            timeZone: timeConfiguration.timezone,
+        };
+
+        if (!timeConfiguration.ntp.enabled) {
+            configuration.localTime = moment().utcOffset(timeConfiguration.timezone.replace('GMT', '')).add(1, 'seconds').format();
+        }
+
+        const updateRes = await this.getDigestClient().fetch(
+            this.buildURL(`/ISAPI/System/time`),
+            {
+                method: 'put',
+                headers: {
+                    'content-type': 'application/xml',
+                },
+                body: this.xmlBuilder.build({
+                    '?xml': { '@_version': '1.0', '@_encoding': 'UTF-8' },
+                    Time: configuration
+                }),
+                signal: this.timeoutSignal
+            }
+        );
+
+        if (updateRes.status !== 200) {
+            throw new HttpRequestError();
+        }
+
+        if (timeConfiguration.ntp.enabled) {
+            const updateRes = await this.getDigestClient().fetch(
+                this.buildURL(`/ISAPI/System/time/ntpServers/1`),
+                {
+                    method: 'put',
+                    headers: {
+                        'content-type': 'application/xml',
+                    },
+                    body: this.xmlBuilder.build({
+                        '?xml': { '@_version': '1.0', '@_encoding': 'UTF-8' },
+                        NTPServer: {
+                            id: 1,
+                            addressingFormatType: 'hostname',
+                            hostName: timeConfiguration.ntp.server,
+                            portNo: timeConfiguration.ntp.port,
+                            synchronizeInterval: timeConfiguration.ntp.interval
+                        }
+                    }),
+                    signal: this.timeoutSignal
+                }
+            );
+
+            if (updateRes.status !== 200) {
+                throw new HttpRequestError();
+            }
+        }
+    }
+
+    async getCurrentTime(): Promise<Date> {
+        const res = await this.getDigestClient().fetch(
+            this.buildURL(`/ISAPI/System/time`),
+            {
+                signal: this.timeoutSignal
+            }
+        );
+
+        if (res.status !== 200) {
+            throw new HttpRequestError();
+        }
+
+        const timeData = this.xmlParser.parse(await res.text());
+        const date = moment(timeData?.Time?.localTime);
+        if (!date.isValid()) {
+            throw new HttpRequestError('Invalid time format received from camera');
+        }
+
+        return date.toDate();
+    }
+
+    async setCurrentTime(date: Date) {
+        const res = await this.getDigestClient().fetch(
+            this.buildURL(`/ISAPI/System/time`),
+            {
+                signal: this.timeoutSignal
+            }
+        );
+
+        if (res.status !== 200) {
+            throw new HttpRequestError();
+        }
+
+        const timeData = this.xmlParser.parse(await res.text());
+        timeData.Time.localTime = moment(date).format();
+
+        const updateRes = await this.getDigestClient().fetch(
+            this.buildURL(`/ISAPI/System/time`),
+            {
+                method: 'put',
+                headers: {
+                    'content-type': 'application/xml',
+                },
+                body: this.xmlBuilder.build(timeData),
+                signal: this.timeoutSignal
+            }
+        );
+
+        if (updateRes.status !== 200) {
+            throw new HttpRequestError();
+        }
+    }
+
     public async reboot() {
         const resp = await this.getDigestClient().fetch(
             this.buildURL(`/ISAPI/System/reboot`),
@@ -284,8 +395,6 @@ export class HikvisionDevice extends BaseDevice {
         if (Number(res?.ResponseStatus?.statusCode) !== 1 || res?.ResponseStatus?.subStatusCode !== 'ok') {
             throw new HttpRequestError();
         }
-
-        return res;
     }
 
     private async getCameraChannels() {
