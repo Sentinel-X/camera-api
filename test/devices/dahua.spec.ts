@@ -439,6 +439,157 @@ describe("DahuaDevice", () => {
         }
     });
 
+    it("updates overlay configuration for channel title and video widget", async () => {
+        const channelTitlePayload = [
+            "table.ChannelTitle[0].Name=CAM1"
+        ].join("\n");
+
+        const videoWidgetPayload = [
+            "table.VideoWidget[0].ChannelTitle.EncodeBlend=false",
+            "table.VideoWidget[0].ChannelTitle.PreviewBlend=false",
+            "table.VideoWidget[0].ChannelTitle.Rect[0]=0",
+            "table.VideoWidget[0].ChannelTitle.Rect[1]=0",
+            "table.VideoWidget[0].ChannelTitle.Rect[2]=0",
+            "table.VideoWidget[0].ChannelTitle.Rect[3]=0",
+            "table.VideoWidget[0].TimeTitle.EncodeBlend=false",
+            "table.VideoWidget[0].TimeTitle.PreviewBlend=false",
+            "table.VideoWidget[0].TimeTitle.Rect[0]=0",
+            "table.VideoWidget[0].TimeTitle.Rect[1]=0",
+            "table.VideoWidget[0].TimeTitle.Rect[2]=0",
+            "table.VideoWidget[0].TimeTitle.Rect[3]=0",
+            "table.VideoWidget[0].TimeTitle.ShowWeek=true"
+        ].join("\n");
+
+        nock("http://camera.test:80")
+            .get("/cgi-bin/configManager.cgi")
+            .query({ action: "getConfig", name: "ChannelTitle" })
+            .reply(200, channelTitlePayload);
+
+        nock("http://camera.test:80")
+            .get("/cgi-bin/configManager.cgi")
+            .query({
+                action: "setConfig",
+                "ChannelTitle[0].Name": "SMART SAMPA"
+            })
+            .reply(200, "OK");
+
+        nock("http://camera.test:80")
+            .get("/cgi-bin/configManager.cgi")
+            .query({ action: "getConfig", name: "VideoWidget" })
+            .reply(200, videoWidgetPayload);
+
+        nock("http://camera.test:80")
+            .get("/cgi-bin/configManager.cgi")
+            .query({
+                action: "setConfig",
+                "VideoWidget[0].ChannelTitle.EncodeBlend": "true",
+                "VideoWidget[0].ChannelTitle.PreviewBlend": "true",
+                "VideoWidget[0].ChannelTitle.Rect[1]": "8191",
+                "VideoWidget[0].ChannelTitle.Rect[3]": "8191",
+                "VideoWidget[0].TimeTitle.EncodeBlend": "true",
+                "VideoWidget[0].TimeTitle.PreviewBlend": "true",
+                "VideoWidget[0].TimeTitle.Rect[0]": "8191",
+                "VideoWidget[0].TimeTitle.Rect[2]": "8191",
+                "VideoWidget[0].TimeTitle.ShowWeek": "false"
+            })
+            .reply(200, "OK");
+
+        const device = new DahuaDevice(defaultConfig);
+
+        await device.setOverlayConfiguration({
+            channelTitle: {
+                name: "SMART SAMPA",
+                encodeBlend: true,
+                previewBlend: true,
+                rect: [0, 8191, 0, 8191],
+            },
+            timeTitle: {
+                encodeBlend: true,
+                previewBlend: true,
+                rect: [8191, 0, 8191, 0],
+                showWeek: false,
+            }
+        });
+    });
+
+    it("does not call setConfig when overlay configuration is already up to date", async () => {
+        const channelTitlePayload = [
+            "table.ChannelTitle[0].Name=SMART SAMPA"
+        ].join("\n") + "\n";
+
+        const videoWidgetPayload = [
+            "table.VideoWidget[0].ChannelTitle.EncodeBlend=true",
+            "table.VideoWidget[0].ChannelTitle.PreviewBlend=true",
+            "table.VideoWidget[0].ChannelTitle.Rect[0]=0",
+            "table.VideoWidget[0].ChannelTitle.Rect[1]=8191",
+            "table.VideoWidget[0].ChannelTitle.Rect[2]=0",
+            "table.VideoWidget[0].ChannelTitle.Rect[3]=8191",
+            "table.VideoWidget[0].TimeTitle.EncodeBlend=true",
+            "table.VideoWidget[0].TimeTitle.PreviewBlend=true",
+            "table.VideoWidget[0].TimeTitle.Rect[0]=8191",
+            "table.VideoWidget[0].TimeTitle.Rect[1]=0",
+            "table.VideoWidget[0].TimeTitle.Rect[2]=8191",
+            "table.VideoWidget[0].TimeTitle.Rect[3]=0",
+            "table.VideoWidget[0].TimeTitle.ShowWeek=false"
+        ].join("\n") + "\n";
+
+        nock("http://camera.test:80")
+            .get("/cgi-bin/configManager.cgi")
+            .query({ action: "getConfig", name: "ChannelTitle" })
+            .reply(200, channelTitlePayload);
+
+        nock("http://camera.test:80")
+            .get("/cgi-bin/configManager.cgi")
+            .query({ action: "getConfig", name: "VideoWidget" })
+            .reply(200, videoWidgetPayload);
+
+        const device = new DahuaDevice(defaultConfig);
+
+        await device.setOverlayConfiguration({
+            channelTitle: {
+                name: "SMART SAMPA",
+                encodeBlend: true,
+                previewBlend: true,
+                rect: [0, 8191, 0, 8191],
+            },
+            timeTitle: {
+                encodeBlend: true,
+                previewBlend: true,
+                rect: [8191, 0, 8191, 0],
+                showWeek: false,
+            }
+        });
+    });
+
+    it("throws HttpRequestError when overlay setConfig returns non-ok response", async () => {
+        const channelTitlePayload = [
+            "table.ChannelTitle[0].Name=CAM1"
+        ].join("\n");
+
+        nock("http://camera.test:80")
+            .get("/cgi-bin/configManager.cgi")
+            .query({ action: "getConfig", name: "ChannelTitle" })
+            .reply(200, channelTitlePayload);
+
+        nock("http://camera.test:80")
+            .get("/cgi-bin/configManager.cgi")
+            .query((queryObject) => queryObject.action === "setConfig")
+            .reply(200, "error");
+
+        const device = new DahuaDevice(defaultConfig);
+
+        try {
+            await device.setOverlayConfiguration({
+                channelTitle: {
+                    name: "SMART SAMPA",
+                }
+            });
+            expect.fail('Function should have thrown');
+        } catch (error) {
+            expect(error).to.be.instanceOf(HttpRequestError);
+        }
+    });
+
     it("returns current time converted using camera timezone", async () => {
         const ntpPayload = [
             "table.NTP.TimeZone=22",

@@ -700,6 +700,234 @@ describe("HikvisionDevice", () => {
         }
     });
 
+      it("returns overlay configuration from camera xml", async () => {
+        const overlayPayload = `<?xml version="1.0" encoding="UTF-8"?>
+        <VideoOverlay>
+          <normalizedScreenSize>
+            <normalizedScreenWidth>704</normalizedScreenWidth>
+            <normalizedScreenHeight>480</normalizedScreenHeight>
+          </normalizedScreenSize>
+          <TextOverlayList size="1">
+            <TextOverlay>
+              <id>1</id>
+              <enabled>true</enabled>
+              <positionX>0</positionX>
+              <positionY>480</positionY>
+              <displayText>SMART SAMPA</displayText>
+            </TextOverlay>
+          </TextOverlayList>
+          <DateTimeOverlay>
+            <enabled>true</enabled>
+            <positionX>550</positionX>
+            <positionY>480</positionY>
+            <dateStyle>DD-MM-YYYY</dateStyle>
+            <timeStyle>24hour</timeStyle>
+            <displayWeek>false</displayWeek>
+          </DateTimeOverlay>
+          <channelNameOverlay>
+            <enabled>false</enabled>
+            <positionX>628</positionX>
+            <positionY>64</positionY>
+          </channelNameOverlay>
+          <fontSize>32*32</fontSize>
+          <alignment>customize</alignment>
+        </VideoOverlay>`;
+
+        nock("http://hikvision.test:80")
+          .get("/ISAPI/System/Video/inputs/channels/1/overlays")
+          .reply(200, overlayPayload);
+
+        const device = new HikvisionDevice(defaultConfig);
+
+        const config = await device.getOverlayConfiguration(1);
+
+        expect(config).to.deep.equal({
+          normalizedScreenSize: {
+            width: 704,
+            height: 480,
+          },
+          textOverlay: [
+            {
+              enabled: true,
+              text: "SMART SAMPA",
+              positionX: 0,
+              positionY: 480,
+            }
+          ],
+          dateTimeOverlay: {
+            enabled: true,
+            positionX: 550,
+            positionY: 480,
+            dateFormat: "DD-MM-YYYY",
+            timeFormat: "24hour",
+            displayWeek: false,
+          },
+          channelNameOverlay: {
+            enabled: false,
+          },
+          style: {
+            fontSize: "32*32",
+            alignment: "customize",
+          }
+        });
+      });
+
+      it("throws HttpRequestError when getOverlayConfiguration request fails", async () => {
+        nock("http://hikvision.test:80")
+          .get("/ISAPI/System/Video/inputs/channels/1/overlays")
+          .reply(500, "error");
+
+        const device = new HikvisionDevice(defaultConfig);
+
+        try {
+          await device.getOverlayConfiguration(1);
+          expect.fail('Function should have thrown');
+        } catch (error) {
+          expect(error).to.be.instanceOf(HttpRequestError);
+        }
+      });
+
+      it("updates overlay configuration using current camera payload", async () => {
+        const getPayload = `<?xml version="1.0" encoding="UTF-8"?>
+        <VideoOverlay>
+          <normalizedScreenSize>
+            <normalizedScreenWidth>704</normalizedScreenWidth>
+            <normalizedScreenHeight>480</normalizedScreenHeight>
+          </normalizedScreenSize>
+          <TextOverlayList size="1">
+            <TextOverlay>
+              <id>1</id>
+              <enabled>true</enabled>
+              <positionX>0</positionX>
+              <positionY>480</positionY>
+              <displayText>OLD TEXT</displayText>
+            </TextOverlay>
+          </TextOverlayList>
+          <DateTimeOverlay>
+            <enabled>true</enabled>
+            <positionX>550</positionX>
+            <positionY>480</positionY>
+            <dateStyle>DD-MM-YYYY</dateStyle>
+            <timeStyle>24hour</timeStyle>
+            <displayWeek>false</displayWeek>
+          </DateTimeOverlay>
+          <channelNameOverlay>
+            <enabled>false</enabled>
+            <positionX>628</positionX>
+            <positionY>64</positionY>
+          </channelNameOverlay>
+          <fontSize>32*32</fontSize>
+          <alignment>customize</alignment>
+        </VideoOverlay>`;
+
+        const putResponse = `<?xml version="1.0" encoding="UTF-8"?>
+        <ResponseStatus>
+          <statusCode>1</statusCode>
+          <statusString>OK</statusString>
+          <subStatusCode>ok</subStatusCode>
+        </ResponseStatus>`;
+
+        let putBody = "";
+
+        nock("http://hikvision.test:80")
+          .get("/ISAPI/System/Video/inputs/channels/1/overlays")
+          .reply(200, getPayload);
+
+        nock("http://hikvision.test:80")
+          .put("/ISAPI/System/Video/inputs/channels/1/overlays", (body: string) => {
+            putBody = String(body);
+            return true;
+          })
+          .reply(200, putResponse);
+
+        const device = new HikvisionDevice(defaultConfig);
+
+        await device.setOverlayConfiguration(1, {
+          normalizedScreenSize: {
+            width: 1000,
+            height: 1000,
+          },
+          textOverlay: [
+            {
+              enabled: true,
+              text: "SMART SAMPA",
+              positionX: 10,
+              positionY: 20,
+            },
+            {
+              enabled: false,
+              text: "SECOND",
+              positionX: 30,
+              positionY: 40,
+            }
+          ],
+          dateTimeOverlay: {
+            enabled: false,
+            positionX: 123,
+            positionY: 321,
+            dateFormat: "YYYY-MM-DD",
+            timeFormat: "12hour",
+            displayWeek: true,
+          },
+          channelNameOverlay: {
+            enabled: true,
+          },
+          style: {
+            fontSize: "16*16",
+            alignment: "alignLeft",
+          }
+        });
+
+        expect(putBody).to.include("<TextOverlayList size=\"2\">");
+        expect(putBody).to.include("<id>1</id>");
+        expect(putBody).to.include("<id>2</id>");
+        expect(putBody).to.include("<displayText>SMART SAMPA</displayText>");
+        expect(putBody).to.include("<displayText>SECOND</displayText>");
+        expect(putBody).to.include("<dateStyle>YYYY-MM-DD</dateStyle>");
+        expect(putBody).to.include("<timeStyle>12hour</timeStyle>");
+        expect(putBody).to.include("<displayWeek>true</displayWeek>");
+        expect(putBody).to.include("<fontSize>16*16</fontSize>");
+        expect(putBody).to.include("<alignment>alignLeft</alignment>");
+      });
+
+      it("throws HttpRequestError when setOverlayConfiguration response is invalid", async () => {
+        const getPayload = `<?xml version="1.0" encoding="UTF-8"?>
+        <VideoOverlay>
+          <normalizedScreenSize>
+            <normalizedScreenWidth>704</normalizedScreenWidth>
+            <normalizedScreenHeight>480</normalizedScreenHeight>
+          </normalizedScreenSize>
+        </VideoOverlay>`;
+
+        const invalidPutResponse = `<?xml version="1.0" encoding="UTF-8"?>
+        <ResponseStatus>
+          <statusCode>2</statusCode>
+          <subStatusCode>error</subStatusCode>
+        </ResponseStatus>`;
+
+        nock("http://hikvision.test:80")
+          .get("/ISAPI/System/Video/inputs/channels/1/overlays")
+          .reply(200, getPayload);
+
+        nock("http://hikvision.test:80")
+          .put("/ISAPI/System/Video/inputs/channels/1/overlays")
+          .reply(200, invalidPutResponse);
+
+        const device = new HikvisionDevice(defaultConfig);
+
+        try {
+          await device.setOverlayConfiguration(1, {
+            style: {
+              fontSize: "32*32",
+              alignment: "customize",
+            }
+          });
+          expect.fail('Function should have thrown');
+        } catch (error) {
+          expect(error).to.be.instanceOf(HttpRequestError);
+        }
+      });
+
       it("reboots camera when response is ok", async () => {
         const rebootPayload = `<?xml version="1.0" encoding="UTF-8"?>
         <ResponseStatus>

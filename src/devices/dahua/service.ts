@@ -3,7 +3,7 @@ import moment from 'moment-timezone';
 import { HttpRequestError, MissingConfigurationError, NotImplementedError } from "../../errors.js";
 import { InvasionAreaCoordinate } from "../../types.js";
 import { BaseDevice } from "../base.js";
-import { ImageQualityConfiguration, InvasionAreaPoint, TimeConfiguration } from './types.js';
+import { ImageQualityConfiguration, InvasionAreaPoint, OverlayConfiguration, TimeConfiguration } from './types.js';
 import { timezones } from './constants.js';
 
 export class DahuaDevice extends BaseDevice {
@@ -289,6 +289,109 @@ export class DahuaDevice extends BaseDevice {
 
     public async reboot() {
         throw new NotImplementedError('Rebooting Dahua cameras is not supported yet');
+    }
+
+    public async setOverlayConfiguration(overlayConfig: OverlayConfiguration) {
+        const channelTitleConfig = overlayConfig.channelTitle;
+        if (channelTitleConfig?.name !== undefined) {
+            const channelTitleParams = new URLSearchParams();
+            const currentChannelTitleConfig = await this.getConfig('ChannelTitle');
+
+            if (!this.stringIncludesWithLineBreak(currentChannelTitleConfig, `ChannelTitle[0].Name=${channelTitleConfig.name}`)) {
+                channelTitleParams.append('ChannelTitle[0].Name', channelTitleConfig.name);
+            }
+
+            if (channelTitleParams.size > 0) {
+                await this.setConfigs(channelTitleParams, { encodeSpaces: true });
+            }
+        }
+
+        const hasVideoWidgetUpdate =
+            overlayConfig.channelTitle?.encodeBlend !== undefined ||
+            overlayConfig.channelTitle?.previewBlend !== undefined ||
+            overlayConfig.channelTitle?.rect !== undefined ||
+            overlayConfig.timeTitle?.encodeBlend !== undefined ||
+            overlayConfig.timeTitle?.previewBlend !== undefined ||
+            overlayConfig.timeTitle?.rect !== undefined ||
+            overlayConfig.timeTitle?.showWeek !== undefined;
+
+        if (!hasVideoWidgetUpdate) {
+            return;
+        }
+
+        const osdQueryParams = new URLSearchParams();
+        const osdConfig = await this.getConfig('VideoWidget');
+
+        if (overlayConfig.channelTitle?.encodeBlend !== undefined) {
+            const key = 'VideoWidget[0].ChannelTitle.EncodeBlend';
+            const value = overlayConfig.channelTitle.encodeBlend.toString();
+            if (!this.stringIncludesWithLineBreak(osdConfig, `${key}=${value}`)) {
+                osdQueryParams.append(key, value);
+            }
+        }
+
+        if (overlayConfig.channelTitle?.previewBlend !== undefined) {
+            const key = 'VideoWidget[0].ChannelTitle.PreviewBlend';
+            const value = overlayConfig.channelTitle.previewBlend.toString();
+            if (!this.stringIncludesWithLineBreak(osdConfig, `${key}=${value}`)) {
+                osdQueryParams.append(key, value);
+            }
+        }
+
+        if (overlayConfig.channelTitle?.rect) {
+            const [x1, y1, x2, y2] = overlayConfig.channelTitle.rect;
+            const rectValues = [x1, y1, x2, y2];
+
+            for (let i = 0; i < rectValues.length; i++) {
+                const key = `VideoWidget[0].ChannelTitle.Rect[${i}]`;
+                const value = rectValues[i].toString();
+                if (!this.stringIncludesWithLineBreak(osdConfig, `${key}=${value}`)) {
+                    osdQueryParams.append(key, value);
+                }
+            }
+        }
+
+        if (overlayConfig.timeTitle?.encodeBlend !== undefined) {
+            const key = 'VideoWidget[0].TimeTitle.EncodeBlend';
+            const value = overlayConfig.timeTitle.encodeBlend.toString();
+            if (!this.stringIncludesWithLineBreak(osdConfig, `${key}=${value}`)) {
+                osdQueryParams.append(key, value);
+            }
+        }
+
+        if (overlayConfig.timeTitle?.previewBlend !== undefined) {
+            const key = 'VideoWidget[0].TimeTitle.PreviewBlend';
+            const value = overlayConfig.timeTitle.previewBlend.toString();
+            if (!this.stringIncludesWithLineBreak(osdConfig, `${key}=${value}`)) {
+                osdQueryParams.append(key, value);
+            }
+        }
+
+        if (overlayConfig.timeTitle?.rect) {
+            const [x1, y1, x2, y2] = overlayConfig.timeTitle.rect;
+            const rectValues = [x1, y1, x2, y2];
+
+            for (let i = 0; i < rectValues.length; i++) {
+                const key = `VideoWidget[0].TimeTitle.Rect[${i}]`;
+                const value = rectValues[i].toString();
+                if (!this.stringIncludesWithLineBreak(osdConfig, `${key}=${value}`)) {
+                    osdQueryParams.append(key, value);
+                }
+            }
+        }
+
+        if (overlayConfig.timeTitle?.showWeek !== undefined) {
+            const key = 'VideoWidget[0].TimeTitle.ShowWeek';
+            const value = overlayConfig.timeTitle.showWeek.toString();
+            if (!this.stringIncludesWithLineBreak(osdConfig, `${key}=${value}`)) {
+                osdQueryParams.append(key, value);
+            }
+        }
+
+        if (osdQueryParams.size > 0) {
+            await this.setConfigs(osdQueryParams);
+        }
+
     }
 
     private async removeCurrentAreaInvasionCoordinates(ruleConfig: string, ruleNumber: number) {
