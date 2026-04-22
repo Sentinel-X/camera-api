@@ -3,49 +3,8 @@ import moment from 'moment-timezone';
 import { BaseDevice } from "../base.js";
 import { HttpRequestError, MissingConfigurationError } from "../../errors.js";
 import { DeviceConfiguration, InvasionAreaCoordinate } from "../../types.js";
-import { ImageQualityConfiguration, OverlayConfiguration, TimeConfiguration } from "./types.js";
-
-type FieldDetectionRegion = {
-    id?: number | string;
-    RegionCoordinatesList?: {
-        RegionCoordinates?: unknown | unknown[];
-    };
-};
-
-function parseDimension(value: unknown, fallback: number): number {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : fallback;
-}
-
-function parseBoolean(value: unknown): boolean | undefined {
-    if (typeof value === 'boolean') {
-        return value;
-    }
-
-    if (typeof value === 'number') {
-        if (value === 1) {
-            return true;
-        }
-
-        if (value === 0) {
-            return false;
-        }
-    }
-
-    if (typeof value === 'string') {
-        const normalized = value.trim().toLowerCase();
-
-        if (normalized === 'true' || normalized === '1') {
-            return true;
-        }
-
-        if (normalized === 'false' || normalized === '0') {
-            return false;
-        }
-    }
-
-    return undefined;
-}
+import { FieldDetectionRegion, ImageQualityConfiguration, OverlayConfiguration, TimeConfiguration } from "./types.js";
+import { parseBoolean, parseDimension } from "./utils.js";
 
 export class HikvisionDevice extends BaseDevice {
     private xmlParser;

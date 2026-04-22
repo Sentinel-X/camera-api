@@ -46,3 +46,11 @@ export type OverlayConfiguration = {
         alignment: 'customize' | 'alignRight' | 'alignLeft';
     };
 };
+
+
+export type FieldDetectionRegion = {
+    id?: number | string;
+    RegionCoordinatesList?: {
+        RegionCoordinates?: unknown | unknown[];
+    };
+};
