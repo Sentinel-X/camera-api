@@ -3,19 +3,8 @@ import moment from 'moment-timezone';
 import { BaseDevice } from "../base.js";
 import { HttpRequestError, MissingConfigurationError } from "../../errors.js";
 import { DeviceConfiguration, InvasionAreaCoordinate } from "../../types.js";
-import { ImageQualityConfiguration, TimeConfiguration } from "./types.js";
-
-type FieldDetectionRegion = {
-    id?: number | string;
-    RegionCoordinatesList?: {
-        RegionCoordinates?: unknown | unknown[];
-    };
-};
-
-function parseDimension(value: unknown, fallback: number): number {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : fallback;
-}
+import { FieldDetectionRegion, ImageQualityConfiguration, OverlayConfiguration, TimeConfiguration } from "./types.js";
+import { parseBoolean, parseDimension } from "./utils.js";
 
 export class HikvisionDevice extends BaseDevice {
     private xmlParser;
@@ -393,6 +382,158 @@ export class HikvisionDevice extends BaseDevice {
 
         const res = this.xmlParser.parse(await resp.text());
         if (Number(res?.ResponseStatus?.statusCode) !== 1 || res?.ResponseStatus?.subStatusCode !== 'ok') {
+            throw new HttpRequestError();
+        }
+    }
+
+    public async getOverlayConfiguration(channelId: number): Promise<OverlayConfiguration> {
+        const res = await this.getDigestClient().fetch(
+            this.buildURL(`/ISAPI/System/Video/inputs/channels/${channelId}/overlays`),
+            {
+                signal: this.timeoutSignal
+            }
+        );
+
+        if (res.status !== 200) {
+            throw new HttpRequestError();
+        }
+
+        const overlays = this.xmlParser.parse(await res.text());
+
+        const overlay = overlays?.VideoOverlay;
+        if (!overlay) {
+            return {};
+        }
+
+        const textOverlays = Array.isArray(overlay?.TextOverlayList?.TextOverlay)
+            ? overlay.TextOverlayList.TextOverlay
+            : overlay?.TextOverlayList?.TextOverlay !== undefined && overlay?.TextOverlayList?.TextOverlay !== null
+                ? [overlay.TextOverlayList.TextOverlay]
+                : [];
+
+        const configuration: OverlayConfiguration = {};
+
+        if (overlay.normalizedScreenSize) {
+            configuration.normalizedScreenSize = {
+                width: parseDimension(overlay.normalizedScreenSize.normalizedScreenWidth, 0),
+                height: parseDimension(overlay.normalizedScreenSize.normalizedScreenHeight, 0),
+            };
+        }
+
+        if (textOverlays.length) {
+            configuration.textOverlay = textOverlays.map((textOverlay: Record<string, unknown>) => ({
+                enabled: parseBoolean(textOverlay.enabled) ?? false,
+                text: typeof textOverlay.displayText === 'string' ? textOverlay.displayText : '',
+                positionX: parseDimension(textOverlay.positionX, 0),
+                positionY: parseDimension(textOverlay.positionY, 0),
+            }));
+        }
+
+        if (overlay.DateTimeOverlay) {
+            configuration.dateTimeOverlay = {
+                enabled: parseBoolean(overlay.DateTimeOverlay.enabled) ?? false,
+                positionX: parseDimension(overlay.DateTimeOverlay.positionX, 0),
+                positionY: parseDimension(overlay.DateTimeOverlay.positionY, 0),
+                dateFormat: typeof overlay.DateTimeOverlay.dateStyle === 'string' ? overlay.DateTimeOverlay.dateStyle : '',
+                timeFormat: typeof overlay.DateTimeOverlay.timeStyle === 'string' ? overlay.DateTimeOverlay.timeStyle : '',
+                displayWeek: parseBoolean(overlay.DateTimeOverlay.displayWeek) ?? false,
+            };
+        }
+
+        if (overlay.channelNameOverlay) {
+            configuration.channelNameOverlay = {
+                enabled: parseBoolean(overlay.channelNameOverlay.enabled) ?? false,
+            };
+        }
+
+        const alignment = overlay.alignment;
+        if (
+            typeof overlay.fontSize === 'string' &&
+            typeof alignment === 'string' &&
+            ['customize', 'alignRight', 'alignLeft'].includes(alignment)
+        ) {
+            configuration.style = {
+                fontSize: overlay.fontSize,
+                alignment: alignment as 'customize' | 'alignRight' | 'alignLeft'
+            };
+        }
+
+        return configuration;
+    }
+
+    public async setOverlayConfiguration(channelId: number, configuration: OverlayConfiguration) {
+        const res = await this.getDigestClient().fetch(
+            this.buildURL(`/ISAPI/System/Video/inputs/channels/${channelId}/overlays`),
+            {
+                signal: this.timeoutSignal
+            }
+        );
+
+        if (res.status !== 200) {
+            throw new HttpRequestError();
+        }
+
+        const overlays = this.xmlParser.parse(await res.text());
+        if (!overlays?.VideoOverlay) {
+            throw new MissingConfigurationError();
+        }
+
+        const overlay = overlays.VideoOverlay;
+        if (configuration.textOverlay) {
+            overlay.TextOverlayList = {
+                '@_size': configuration.textOverlay.length,
+                TextOverlay: configuration.textOverlay.map((textOverlay, index) => ({
+                    id: index + 1,
+                    enabled: textOverlay.enabled,
+                    positionX: textOverlay.positionX,
+                    positionY: textOverlay.positionY,
+                    displayText: textOverlay.text,
+                }))
+            };
+        }
+
+        if (configuration.dateTimeOverlay) {
+            overlay.DateTimeOverlay = {
+                ...(overlay.DateTimeOverlay ?? {}),
+                enabled: configuration.dateTimeOverlay.enabled,
+                positionX: configuration.dateTimeOverlay.positionX,
+                positionY: configuration.dateTimeOverlay.positionY,
+                dateStyle: configuration.dateTimeOverlay.dateFormat,
+                timeStyle: configuration.dateTimeOverlay.timeFormat,
+                displayWeek: configuration.dateTimeOverlay.displayWeek,
+            };
+        }
+
+        if (configuration.channelNameOverlay) {
+            overlay.channelNameOverlay = {
+                ...(overlay.channelNameOverlay ?? {}),
+                enabled: configuration.channelNameOverlay.enabled,
+            };
+        }
+
+        if (configuration.style) {
+            overlay.fontSize = configuration.style.fontSize;
+            overlay.alignment = configuration.style.alignment;
+        }
+
+        const updateRes = await this.getDigestClient().fetch(
+            this.buildURL(`/ISAPI/System/Video/inputs/channels/${channelId}/overlays`),
+            {
+                method: 'put',
+                headers: {
+                    'content-type': 'application/xml',
+                },
+                body: this.xmlBuilder.build(overlays),
+                signal: this.timeoutSignal
+            }
+        );
+
+        if (updateRes.status !== 200) {
+            throw new HttpRequestError();
+        }
+
+        const updatePayload = this.xmlParser.parse(await updateRes.text());
+        if (Number(updatePayload?.ResponseStatus?.statusCode) !== 1 || updatePayload?.ResponseStatus?.subStatusCode !== 'ok') {
             throw new HttpRequestError();
         }
     }

@@ -23,3 +23,18 @@ export type TimeConfiguration = {
         enabled: boolean;
     }
 };
+
+export type OverlayConfiguration = {
+    channelTitle?: {
+        name?: string;
+        encodeBlend?: boolean;
+        previewBlend?: boolean;
+        rect?: [number, number, number, number];
+    };
+    timeTitle?: {
+        encodeBlend?: boolean;
+        previewBlend?: boolean;
+        rect?: [number, number, number, number];
+        showWeek?: boolean;
+    };
+};
