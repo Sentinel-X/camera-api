@@ -3,7 +3,7 @@ import moment from 'moment-timezone';
 import { BaseDevice } from "../base.js";
 import { HttpRequestError, MissingConfigurationError } from "../../errors.js";
 import { DeviceConfiguration, InvasionAreaCoordinate } from "../../types.js";
-import { FieldDetectionRegion, ImageQualityConfiguration, OverlayConfiguration, TimeConfiguration } from "./types.js";
+import { FieldDetectionRegion, ImageQualityConfiguration, OverlayConfiguration, RecordingScheduleConfiguration, TimeConfiguration } from "./types.js";
 import { parseBoolean, parseDimension } from "./utils.js";
 
 export class HikvisionDevice extends BaseDevice {
@@ -534,6 +534,105 @@ export class HikvisionDevice extends BaseDevice {
 
         const updatePayload = this.xmlParser.parse(await updateRes.text());
         if (Number(updatePayload?.ResponseStatus?.statusCode) !== 1 || updatePayload?.ResponseStatus?.subStatusCode !== 'ok') {
+            throw new HttpRequestError();
+        }
+    }
+
+    public async setRecordingScheduleConfiguration(recordingScheduleConfiguration: RecordingScheduleConfiguration[]) {
+        const resp = await this.getDigestClient().fetch(
+            this.buildURL(`/ISAPI/ContentMgmt/record/tracks`),
+            {
+                signal: this.timeoutSignal
+            }
+        );
+
+        if (resp.status !== 200) {
+            throw new HttpRequestError();
+        }
+
+        const schedule = this.xmlParser.parse(await resp.text());
+
+        if (!Array.isArray(schedule.TrackList.Track)) {
+            schedule.TrackList.Track = [schedule.TrackList.Track];
+        }
+
+        const previousSchedule = JSON.stringify(schedule);
+
+        for (const track of schedule.TrackList.Track) {
+            const newConfig = recordingScheduleConfiguration.find(config => config.channelId === Number(track.id));
+            if (!newConfig) {
+                continue;
+            }
+
+            const scheduleBlock = track?.TrackSchedule?.ScheduleBlockList?.ScheduleBlock ?? track?.TrackSchedule?.ScheduleBlock;
+            if (!scheduleBlock) {
+                throw new MissingConfigurationError();
+            }
+
+            if (!Array.isArray(scheduleBlock.ScheduleAction)) {
+                scheduleBlock.ScheduleAction = [];
+            }
+
+            const scheduleKeys: Array<keyof RecordingScheduleConfiguration['schedule']> = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+
+            const cameraWeekdaysLabel = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+            for (let i = 0; i < 7; i++) {
+                if (!scheduleBlock.ScheduleAction[i]) {
+                    scheduleBlock.ScheduleAction[i] = {
+                        id: i + 1, // Starts from 1 to 7. Monday being 1 and Sunday being 7
+                    };
+                }
+
+                const daySchedule = newConfig.schedule[scheduleKeys[i]];
+
+                scheduleBlock.ScheduleAction[i] = {
+                    ...scheduleBlock.ScheduleAction[i],
+                    ScheduleActionStartTime: {
+                        DayOfWeek: cameraWeekdaysLabel[i],
+                        TimeOfDay: daySchedule.start
+                    },
+                    ScheduleActionEndTime: {
+                        DayOfWeek: cameraWeekdaysLabel[i],
+                        TimeOfDay: daySchedule.end
+                    },
+                    ScheduleDSTEnable: false,
+                    Actions: { Record: daySchedule.record, ActionRecordingMode: 'CMR' }
+                };
+            }
+
+            track.Enable = newConfig.enabled;
+            track.CustomExtensionList.CustomExtension.enableSchedule = newConfig.enabled;
+            track.LoopEnable = newConfig.overwriteOldestRecords;
+
+            if (track?.TrackSchedule?.ScheduleBlockList?.ScheduleBlock) {
+                track.TrackSchedule.ScheduleBlockList.ScheduleBlock = scheduleBlock;
+            } else {
+                track.TrackSchedule.ScheduleBlock = scheduleBlock;
+            }
+        }
+
+        if (previousSchedule === JSON.stringify(schedule)) {
+            return;
+        }
+
+        const updateResp = await this.getDigestClient().fetch(
+            this.buildURL(`/ISAPI/ContentMgmt/record/tracks`),
+            {
+                method: 'put',
+                headers: {
+                    'content-type': 'application/xml',
+                },
+                body: this.xmlBuilder.build(schedule),
+                signal: this.timeoutSignal
+            }
+        );
+
+        if (updateResp.status !== 200) {
+            throw new HttpRequestError();
+        }
+
+        const updateRes = this.xmlParser.parse(await updateResp.text());
+        if (Number(updateRes?.ResponseStatus?.statusCode) !== 1 || updateRes?.ResponseStatus?.subStatusCode !== 'ok') {
             throw new HttpRequestError();
         }
     }

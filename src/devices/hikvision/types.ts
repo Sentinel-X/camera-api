@@ -55,4 +55,45 @@ export type FieldDetectionRegion = {
     };
 };
 
-export type RecordingScheduleConfiguration = {};
+export type RecordingScheduleConfiguration = {
+    channelId: number;
+    enabled: boolean;
+    overwriteOldestRecords: boolean;
+    schedule: {
+        monday: {
+            start: string; // e.g: "00:00:00"
+            end: string; // e.g: "24:00:00"
+            record: boolean;
+        }
+        tuesday: {
+            start: string; // e.g: "00:00:00"
+            end: string; // e.g: "24:00:00"
+            record: boolean;
+        }
+        wednesday: {
+            start: string; // e.g: "00:00:00"
+            end: string; // e.g: "24:00:00"
+            record: boolean;
+        }
+        thursday: {
+            start: string; // e.g: "00:00:00"
+            end: string; // e.g: "24:00:00"
+            record: boolean;
+        }
+        friday: {
+            start: string; // e.g: "00:00:00"
+            end: string; // e.g: "24:00:00"
+            record: boolean;
+        }
+        saturday: {
+            start: string; // e.g: "00:00:00"
+            end: string; // e.g: "24:00:00"
+            record: boolean;
+        }
+        sunday: {
+            start: string; // e.g: "00:00:00"
+            end: string; // e.g: "24:00:00"
+            record: boolean;
+        }
+    },
+}
