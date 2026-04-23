@@ -54,3 +54,5 @@ export type FieldDetectionRegion = {
         RegionCoordinates?: unknown | unknown[];
     };
 };
+
+export type RecordingScheduleConfiguration = {};
