@@ -590,6 +590,74 @@ describe("DahuaDevice", () => {
         }
     });
 
+    it("disables ddns configuration", async () => {
+        nock("http://camera.test:80")
+            .get("/cgi-bin/configManager.cgi")
+            .query({
+                action: "setConfig",
+                "DDNS[0].Enable": "false"
+            })
+            .reply(200, "OK");
+
+        const device = new DahuaDevice(defaultConfig);
+
+        await device.setDdnsConfiguration({
+            enabled: false
+        });
+    });
+
+    it("updates ddns configuration when enabled", async () => {
+        nock("http://camera.test:80")
+            .get("/cgi-bin/configManager.cgi")
+            .query({
+                action: "setConfig",
+                "DDNS[0].Enable": "true",
+                "DDNS[0].Address": "members.dyndns.org",
+                "DDNS[0].HostName": "my-camera.dyndns.org",
+                "DDNS[0].Port": "443",
+                "DDNS[0].Protocol": "Dyndns DDNS",
+                "DDNS[0].UserName": "admin-user",
+                "DDNS[0].Password": "secret-pass"
+            })
+            .reply(200, "OK");
+
+        const device = new DahuaDevice(defaultConfig);
+
+        await device.setDdnsConfiguration({
+            enabled: true,
+            address: "members.dyndns.org",
+            hostname: "my-camera.dyndns.org",
+            port: 443,
+            protocol: "Dyndns DDNS",
+            username: "admin-user",
+            password: "secret-pass",
+        });
+    });
+
+    it("throws HttpRequestError when ddns setConfig returns non-ok response", async () => {
+        nock("http://camera.test:80")
+            .get("/cgi-bin/configManager.cgi")
+            .query((queryObject) => queryObject.action === "setConfig" && queryObject["DDNS[0].Enable"] === "true")
+            .reply(200, "error");
+
+        const device = new DahuaDevice(defaultConfig);
+
+        try {
+            await device.setDdnsConfiguration({
+                enabled: true,
+                address: "members.dyndns.org",
+                hostname: "my-camera.dyndns.org",
+                port: 443,
+                protocol: "Dyndns DDNS",
+                username: "admin-user",
+                password: "secret-pass",
+            });
+            expect.fail('Function should have thrown');
+        } catch (error) {
+            expect(error).to.be.instanceOf(HttpRequestError);
+        }
+    });
+
     it("returns current time converted using camera timezone", async () => {
         const ntpPayload = [
             "table.NTP.TimeZone=22",

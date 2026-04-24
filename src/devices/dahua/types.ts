@@ -38,3 +38,23 @@ export type OverlayConfiguration = {
         showWeek?: boolean;
     };
 };
+
+export type DddnsConfiguration =
+    | {
+        enabled: false;
+        address?: never;
+        hostname?: never;
+        port?: never;
+        protocol?: never;
+        username?: never;
+        password?: never;
+    }
+    | {
+        enabled: true;
+        address: string;
+        hostname: string;
+        port: number;
+        protocol: 'Dyndns DDNS';
+        username: string;
+        password: string;
+    };

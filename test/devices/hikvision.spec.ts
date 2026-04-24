@@ -697,6 +697,212 @@ describe("HikvisionDevice", () => {
         }
     });
 
+      it("returns parsed HDD list from camera payload", async () => {
+        const hddPayload = `<?xml version="1.0" encoding="UTF-8"?>
+        <hddList version="1.0" xmlns="http://www.hikvision.com/ver10/XMLSchema" size="1" >
+        <hdd>
+          <id>1</id>
+          <hddName>hdde</hddName>
+          <hddPath></hddPath>
+          <hddType>SATA</hddType>
+          <status>ok</status>
+          <capacity>477103</capacity>
+          <freeSpace>0</freeSpace>
+          <property>RW</property>
+          <formatType>EXT4</formatType>
+          <Encryption>
+          <passwordLen min="6" max="64"/>
+          <encryptionStatus opt="unencrypted,encrypted,verfyFailed">unencrypted</encryptionStatus>
+          <encryptFormatType opt="EXT4">EXT4</encryptFormatType>
+          </Encryption>
+          <installationTime>21-Apr-2026 15:59</installationTime>
+        </hdd>
+        </hddList>`;
+
+        nock("http://hikvision.test:80")
+          .get("/ISAPI/ContentMgmt/Storage/hdd")
+          .reply(200, hddPayload);
+
+        const device = new HikvisionDevice(defaultConfig);
+
+        const hddList = await device.getHddList();
+
+        expect(hddList).to.deep.equal([
+          {
+            id: 1,
+            capacity: 477103,
+            freeSpace: 0,
+          }
+        ]);
+      });
+
+      it("throws HttpRequestError when getHddList request fails", async () => {
+        nock("http://hikvision.test:80")
+          .get("/ISAPI/ContentMgmt/Storage/hdd")
+          .reply(500, "error");
+
+        const device = new HikvisionDevice(defaultConfig);
+
+        try {
+          await device.getHddList();
+          expect.fail('Function should have thrown');
+        } catch (error) {
+          expect(error).to.be.instanceOf(HttpRequestError);
+        }
+      });
+
+      it("updates storage quota when quota ratios differ", async () => {
+        const getPayload = `<?xml version="1.0" encoding="UTF-8"?>
+        <diskQuota version="2.0" xmlns="http://www.hikvision.com/ver20/XMLSchema">
+          <id>1</id>
+          <type>ratio</type>
+          <videoQuotaRatio>95</videoQuotaRatio>
+          <totalVideoVolume>449536</totalVideoVolume>
+          <freeVideoQuota>0</freeVideoQuota>
+          <pictureQuotaRatio>5</pictureQuotaRatio>
+          <totalPictureVolume>256</totalPictureVolume>
+          <freePictureQuota>0</freePictureQuota>
+        </diskQuota>`;
+
+        const putResponse = `<?xml version="1.0" encoding="UTF-8"?>
+        <ResponseStatus>
+          <statusCode>1</statusCode>
+          <subStatusCode>ok</subStatusCode>
+        </ResponseStatus>`;
+
+        let putBody = "";
+
+        nock("http://hikvision.test:80")
+          .get("/ISAPI/ContentMgmt/Storage/quota/1")
+          .reply(200, getPayload);
+
+        nock("http://hikvision.test:80")
+          .put("/ISAPI/ContentMgmt/Storage/quota/1", (body: string) => {
+            putBody = String(body);
+            return true;
+          })
+          .reply(200, putResponse);
+
+        const device = new HikvisionDevice(defaultConfig);
+
+        await device.setStorageQuota({
+          hddId: 1,
+          videoQuotaRatio: 90,
+          pictureQuotaRatio: 10,
+        });
+
+        expect(putBody).to.include("<videoQuotaRatio>90</videoQuotaRatio>");
+        expect(putBody).to.include("<pictureQuotaRatio>10</pictureQuotaRatio>");
+      });
+
+      it("does not send storage quota update when ratios are unchanged", async () => {
+        const getPayload = `<?xml version="1.0" encoding="UTF-8"?>
+        <diskQuota version="2.0" xmlns="http://www.hikvision.com/ver20/XMLSchema">
+          <id>1</id>
+          <type>ratio</type>
+          <videoQuotaRatio>95</videoQuotaRatio>
+          <pictureQuotaRatio>5</pictureQuotaRatio>
+        </diskQuota>`;
+
+        nock("http://hikvision.test:80")
+          .get("/ISAPI/ContentMgmt/Storage/quota/1")
+          .reply(200, getPayload);
+
+        const device = new HikvisionDevice(defaultConfig);
+
+        await device.setStorageQuota({
+          hddId: 1,
+          videoQuotaRatio: 95,
+          pictureQuotaRatio: 5,
+        });
+      });
+
+      it("throws HttpRequestError when setStorageQuota get request fails", async () => {
+        nock("http://hikvision.test:80")
+          .get("/ISAPI/ContentMgmt/Storage/quota")
+          .reply(500, "error");
+
+        const device = new HikvisionDevice(defaultConfig);
+
+        try {
+          await device.setStorageQuota({
+            videoQuotaRatio: 90,
+            pictureQuotaRatio: 10,
+          });
+          expect.fail('Function should have thrown');
+        } catch (error) {
+          expect(error).to.be.instanceOf(HttpRequestError);
+        }
+      });
+
+      it("throws HttpRequestError when setStorageQuota update request fails", async () => {
+        const getPayload = `<?xml version="1.0" encoding="UTF-8"?>
+        <diskQuota version="2.0" xmlns="http://www.hikvision.com/ver20/XMLSchema">
+          <id>1</id>
+          <type>ratio</type>
+          <videoQuotaRatio>95</videoQuotaRatio>
+          <pictureQuotaRatio>5</pictureQuotaRatio>
+        </diskQuota>`;
+
+        nock("http://hikvision.test:80")
+          .get("/ISAPI/ContentMgmt/Storage/quota/1")
+          .reply(200, getPayload);
+
+        nock("http://hikvision.test:80")
+          .put("/ISAPI/ContentMgmt/Storage/quota/1")
+          .reply(500, "error");
+
+        const device = new HikvisionDevice(defaultConfig);
+
+        try {
+          await device.setStorageQuota({
+            hddId: 1,
+            videoQuotaRatio: 80,
+            pictureQuotaRatio: 20,
+          });
+          expect.fail('Function should have thrown');
+        } catch (error) {
+          expect(error).to.be.instanceOf(HttpRequestError);
+        }
+      });
+
+      it("throws HttpRequestError when setStorageQuota update response is invalid", async () => {
+        const getPayload = `<?xml version="1.0" encoding="UTF-8"?>
+        <diskQuota version="2.0" xmlns="http://www.hikvision.com/ver20/XMLSchema">
+          <id>1</id>
+          <type>ratio</type>
+          <videoQuotaRatio>95</videoQuotaRatio>
+          <pictureQuotaRatio>5</pictureQuotaRatio>
+        </diskQuota>`;
+
+        const invalidPutResponse = `<?xml version="1.0" encoding="UTF-8"?>
+        <ResponseStatus>
+          <statusCode>2</statusCode>
+          <subStatusCode>error</subStatusCode>
+        </ResponseStatus>`;
+
+        nock("http://hikvision.test:80")
+          .get("/ISAPI/ContentMgmt/Storage/quota/1")
+          .reply(200, getPayload);
+
+        nock("http://hikvision.test:80")
+          .put("/ISAPI/ContentMgmt/Storage/quota/1")
+          .reply(200, invalidPutResponse);
+
+        const device = new HikvisionDevice(defaultConfig);
+
+        try {
+          await device.setStorageQuota({
+            hddId: 1,
+            videoQuotaRatio: 80,
+            pictureQuotaRatio: 20,
+          });
+          expect.fail('Function should have thrown');
+        } catch (error) {
+          expect(error).to.be.instanceOf(HttpRequestError);
+        }
+      });
+
     it("updates time configuration in manual mode", async () => {
         let timeBody = "";
 
