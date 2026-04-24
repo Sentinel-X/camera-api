@@ -459,6 +459,244 @@ describe("HikvisionDevice", () => {
         }
     });
 
+    it("updates recording schedule configuration using day start/end and record flags", async () => {
+        const getPayload = `<?xml version="1.0" encoding="UTF-8"?>
+      <TrackList>
+        <Track>
+          <id>1</id>
+          <Enable>false</Enable>
+          <LoopEnable>true</LoopEnable>
+          <CustomExtensionList>
+            <CustomExtension>
+              <enableSchedule>false</enableSchedule>
+            </CustomExtension>
+          </CustomExtensionList>
+          <TrackSchedule>
+            <ScheduleBlockList>
+              <ScheduleBlock>
+                <id>1</id>
+              </ScheduleBlock>
+            </ScheduleBlockList>
+          </TrackSchedule>
+        </Track>
+      </TrackList>`;
+
+        const putResponse = `<?xml version="1.0" encoding="UTF-8"?>
+      <ResponseStatus>
+        <statusCode>1</statusCode>
+        <subStatusCode>ok</subStatusCode>
+      </ResponseStatus>`;
+
+        let putBody = "";
+
+        nock("http://hikvision.test:80")
+            .get("/ISAPI/ContentMgmt/record/tracks")
+            .reply(200, getPayload);
+
+        nock("http://hikvision.test:80")
+            .put("/ISAPI/ContentMgmt/record/tracks", (body: string) => {
+                putBody = String(body);
+                return true;
+            })
+            .reply(200, putResponse);
+
+        const device = new HikvisionDevice(defaultConfig);
+
+        await device.setRecordingScheduleConfiguration([
+            {
+                channelId: 1,
+                enabled: true,
+                overwriteOldestRecords: false,
+                schedule: {
+                    monday: { start: "01:00:00", end: "02:00:00", record: true },
+                    tuesday: { start: "03:00:00", end: "04:00:00", record: false },
+                    wednesday: { start: "05:00:00", end: "06:00:00", record: true },
+                    thursday: { start: "07:00:00", end: "08:00:00", record: false },
+                    friday: { start: "09:00:00", end: "10:00:00", record: true },
+                    saturday: { start: "11:00:00", end: "12:00:00", record: false },
+                    sunday: { start: "13:00:00", end: "23:59:59", record: true },
+                }
+            }
+        ]);
+
+        expect(putBody).to.include("<Enable>true</Enable>");
+        expect(putBody).to.include("<LoopEnable>false</LoopEnable>");
+        expect(putBody).to.include("<enableSchedule>true</enableSchedule>");
+
+        expect(putBody).to.include("<DayOfWeek>Monday</DayOfWeek>");
+        expect(putBody).to.include("<TimeOfDay>01:00:00</TimeOfDay>");
+        expect(putBody).to.include("<TimeOfDay>02:00:00</TimeOfDay>");
+        expect(putBody).to.include("<DayOfWeek>Tuesday</DayOfWeek>");
+        expect(putBody).to.include("<TimeOfDay>03:00:00</TimeOfDay>");
+        expect(putBody).to.include("<TimeOfDay>04:00:00</TimeOfDay>");
+        expect(putBody).to.include("<DayOfWeek>Sunday</DayOfWeek>");
+        expect(putBody).to.include("<TimeOfDay>13:00:00</TimeOfDay>");
+        expect(putBody).to.include("<TimeOfDay>23:59:59</TimeOfDay>");
+        expect((putBody.match(/<ScheduleAction>/g) || []).length).to.equal(7);
+
+        expect(putBody).to.include("<Record>true</Record>");
+        expect(putBody).to.include("<Record>false</Record>");
+    });
+
+    it("does not send schedule update when no configuration matches any track", async () => {
+        const getPayload = `<?xml version="1.0" encoding="UTF-8"?>
+      <TrackList>
+        <Track>
+          <id>1</id>
+          <Enable>true</Enable>
+          <LoopEnable>true</LoopEnable>
+          <CustomExtensionList>
+            <CustomExtension>
+              <enableSchedule>true</enableSchedule>
+            </CustomExtension>
+          </CustomExtensionList>
+          <TrackSchedule>
+            <ScheduleBlockList>
+              <ScheduleBlock>
+                <id>1</id>
+                <ScheduleAction>
+                  <id>1</id>
+                  <ScheduleActionStartTime><DayOfWeek>Monday</DayOfWeek><TimeOfDay>00:00:00</TimeOfDay></ScheduleActionStartTime>
+                  <ScheduleActionEndTime><DayOfWeek>Monday</DayOfWeek><TimeOfDay>24:00:00</TimeOfDay></ScheduleActionEndTime>
+                  <ScheduleDSTEnable>false</ScheduleDSTEnable>
+                  <Actions><Record>true</Record><ActionRecordingMode>CMR</ActionRecordingMode></Actions>
+                </ScheduleAction>
+              </ScheduleBlock>
+            </ScheduleBlockList>
+          </TrackSchedule>
+        </Track>
+      </TrackList>`;
+
+        nock("http://hikvision.test:80")
+            .get("/ISAPI/ContentMgmt/record/tracks")
+            .reply(200, getPayload);
+
+        const device = new HikvisionDevice(defaultConfig);
+
+        await device.setRecordingScheduleConfiguration([
+            {
+                channelId: 2,
+                enabled: true,
+                overwriteOldestRecords: false,
+                schedule: {
+                    monday: { start: "01:00:00", end: "02:00:00", record: true },
+                    tuesday: { start: "01:00:00", end: "02:00:00", record: true },
+                    wednesday: { start: "01:00:00", end: "02:00:00", record: true },
+                    thursday: { start: "01:00:00", end: "02:00:00", record: true },
+                    friday: { start: "01:00:00", end: "02:00:00", record: true },
+                    saturday: { start: "01:00:00", end: "02:00:00", record: true },
+                    sunday: { start: "01:00:00", end: "02:00:00", record: true },
+                }
+            }
+        ]);
+    });
+
+    it("throws MissingConfigurationError when schedule block is missing", async () => {
+        const getPayload = `<?xml version="1.0" encoding="UTF-8"?>
+      <TrackList>
+        <Track>
+          <id>1</id>
+          <Enable>true</Enable>
+          <LoopEnable>true</LoopEnable>
+          <CustomExtensionList>
+            <CustomExtension>
+              <enableSchedule>true</enableSchedule>
+            </CustomExtension>
+          </CustomExtensionList>
+          <TrackSchedule></TrackSchedule>
+        </Track>
+      </TrackList>`;
+
+        nock("http://hikvision.test:80")
+            .get("/ISAPI/ContentMgmt/record/tracks")
+            .reply(200, getPayload);
+
+        const device = new HikvisionDevice(defaultConfig);
+
+        try {
+            await device.setRecordingScheduleConfiguration([
+                {
+                    channelId: 1,
+                    enabled: true,
+                    overwriteOldestRecords: false,
+                    schedule: {
+                        monday: { start: "01:00:00", end: "02:00:00", record: true },
+                        tuesday: { start: "01:00:00", end: "02:00:00", record: true },
+                        wednesday: { start: "01:00:00", end: "02:00:00", record: true },
+                        thursday: { start: "01:00:00", end: "02:00:00", record: true },
+                        friday: { start: "01:00:00", end: "02:00:00", record: true },
+                        saturday: { start: "01:00:00", end: "02:00:00", record: true },
+                        sunday: { start: "01:00:00", end: "02:00:00", record: true },
+                    }
+                }
+            ]);
+            expect.fail('Function should have thrown');
+        } catch (error) {
+            expect(error).to.be.instanceOf(MissingConfigurationError);
+        }
+    });
+
+    it("throws HttpRequestError when recording schedule update response is invalid", async () => {
+        const getPayload = `<?xml version="1.0" encoding="UTF-8"?>
+      <TrackList>
+        <Track>
+          <id>1</id>
+          <Enable>false</Enable>
+          <LoopEnable>false</LoopEnable>
+          <CustomExtensionList>
+            <CustomExtension>
+              <enableSchedule>false</enableSchedule>
+            </CustomExtension>
+          </CustomExtensionList>
+          <TrackSchedule>
+            <ScheduleBlockList>
+              <ScheduleBlock>
+                <id>1</id>
+              </ScheduleBlock>
+            </ScheduleBlockList>
+          </TrackSchedule>
+        </Track>
+      </TrackList>`;
+
+        const invalidPutResponse = `<?xml version="1.0" encoding="UTF-8"?>
+      <ResponseStatus>
+        <statusCode>2</statusCode>
+        <subStatusCode>error</subStatusCode>
+      </ResponseStatus>`;
+
+        nock("http://hikvision.test:80")
+            .get("/ISAPI/ContentMgmt/record/tracks")
+            .reply(200, getPayload);
+
+        nock("http://hikvision.test:80")
+            .put("/ISAPI/ContentMgmt/record/tracks")
+            .reply(200, invalidPutResponse);
+
+        const device = new HikvisionDevice(defaultConfig);
+
+        try {
+            await device.setRecordingScheduleConfiguration([
+                {
+                    channelId: 1,
+                    enabled: true,
+                    overwriteOldestRecords: false,
+                    schedule: {
+                        monday: { start: "01:00:00", end: "02:00:00", record: true },
+                        tuesday: { start: "01:00:00", end: "02:00:00", record: true },
+                        wednesday: { start: "01:00:00", end: "02:00:00", record: true },
+                        thursday: { start: "01:00:00", end: "02:00:00", record: true },
+                        friday: { start: "01:00:00", end: "02:00:00", record: true },
+                        saturday: { start: "01:00:00", end: "02:00:00", record: true },
+                        sunday: { start: "01:00:00", end: "02:00:00", record: true },
+                    }
+                }
+            ]);
+            expect.fail('Function should have thrown');
+        } catch (error) {
+            expect(error).to.be.instanceOf(HttpRequestError);
+        }
+    });
+
     it("updates time configuration in manual mode", async () => {
         let timeBody = "";
 
