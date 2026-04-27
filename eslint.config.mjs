@@ -24,5 +24,11 @@ export default [
                 ...globals.node
             }
         }
+    },
+    {
+        files: ['**/*.{js,mjs,cjs,ts}'],
+        rules: {
+            quotes: ['error', 'single', { avoidEscape: true }]
+        }
     }
 ];

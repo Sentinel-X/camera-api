@@ -1,7 +1,7 @@
 import { default as originalFetch } from 'node-fetch';
 import fetchRetry from 'fetch-retry';
 import DigestClient from 'digest-fetch';
-import { DeviceConfiguration, DigestClientOptions } from "../types.js";
+import { DeviceConfiguration, DigestClientOptions } from '../types.js';
 
 export abstract class BaseDevice {
     protected configuration: DeviceConfiguration;

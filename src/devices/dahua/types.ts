@@ -1,4 +1,4 @@
-import { BaseImageQualityConfiguration } from "../../types.js";
+import { BaseImageQualityConfiguration } from '../../types.js';
 
 export interface InvasionAreaPoint {
     x: number;
