@@ -1,4 +1,4 @@
-import { BaseImageQualityConfiguration } from "../../types.js";
+import { BaseImageQualityConfiguration } from '../../types.js';
 
 export type ImageQualityConfiguration = BaseImageQualityConfiguration & {
     smartCodec?: boolean;
@@ -108,4 +108,31 @@ export type SetStorageQuotaOptions = {
     hddId?: number;
     videoQuotaRatio: number; // 0 to 100
     pictureQuotaRatio: number; // 0 to 100
+};
+
+export type Capabilities = {
+    defocus: boolean;
+    sceneChange: boolean;
+};
+
+export type DefocusConfiguration = {
+    enabled: boolean;
+    sensitivityLevel: number; // 1 to 100
+};
+
+export type DefocusTriggerConfiguration = {
+    surveillanceCenter: boolean;
+    io: boolean;
+    email: boolean;
+};
+
+
+export type SceneChangeConfiguration = {
+    enabled: boolean;
+    sensitivityLevel: number; // 1 to 100
+};
+
+export type SceneChangeTriggerConfiguration = {
+    surveillanceCenter: boolean;
+    email: boolean;
 };

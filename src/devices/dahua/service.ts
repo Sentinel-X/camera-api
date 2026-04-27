@@ -1,8 +1,8 @@
 import { setTimeout } from 'timers/promises';
 import moment from 'moment-timezone';
-import { HttpRequestError, MissingConfigurationError, NotImplementedError } from "../../errors.js";
-import { InvasionAreaCoordinate } from "../../types.js";
-import { BaseDevice } from "../base.js";
+import { HttpRequestError, MissingConfigurationError, NotImplementedError } from '../../errors.js';
+import { InvasionAreaCoordinate } from '../../types.js';
+import { BaseDevice } from '../base.js';
 import { DddnsConfiguration, ImageQualityConfiguration, InvasionAreaPoint, OverlayConfiguration, TimeConfiguration } from './types.js';
 import { timezones } from './constants.js';
 
@@ -231,7 +231,7 @@ export class DahuaDevice extends BaseDevice {
         }
 
         const res = await this.getDigestClient().fetch(
-            this.buildURL(`/cgi-bin/global.cgi?action=getCurrentTime`),
+            this.buildURL('/cgi-bin/global.cgi?action=getCurrentTime'),
             {
                 signal: this.timeoutSignal
             }

@@ -1,10 +1,10 @@
 import { XMLParser, XMLBuilder } from 'fast-xml-parser';
 import moment from 'moment-timezone';
-import { BaseDevice } from "../base.js";
-import { HttpRequestError, MissingConfigurationError } from "../../errors.js";
-import { DeviceConfiguration, InvasionAreaCoordinate } from "../../types.js";
-import { FieldDetectionRegion, Hdd, ImageQualityConfiguration, OverlayConfiguration, RecordingScheduleConfiguration, SetStorageQuotaOptions, TimeConfiguration } from "./types.js";
-import { parseBoolean, parseDimension } from "./utils.js";
+import { BaseDevice } from '../base.js';
+import { HttpRequestError, MissingConfigurationError } from '../../errors.js';
+import { DeviceConfiguration, InvasionAreaCoordinate } from '../../types.js';
+import { Capabilities, DefocusConfiguration, DefocusTriggerConfiguration, FieldDetectionRegion, Hdd, ImageQualityConfiguration, OverlayConfiguration, RecordingScheduleConfiguration, SceneChangeConfiguration, SceneChangeTriggerConfiguration, SetStorageQuotaOptions, TimeConfiguration } from './types.js';
+import { parseBoolean, parseDimension } from './utils.js';
 
 export class HikvisionDevice extends BaseDevice {
     private xmlParser;
@@ -23,7 +23,7 @@ export class HikvisionDevice extends BaseDevice {
 
     async getInvasionAreaCoordinates(): Promise<InvasionAreaCoordinate[]> {
         const fieldDetectionRes = await this.getDigestClient().fetch(
-            this.buildURL(`/ISAPI/Smart/FieldDetection/1`),
+            this.buildURL('/ISAPI/Smart/FieldDetection/1'),
             {
                 signal: this.timeoutSignal
             }
@@ -84,7 +84,7 @@ export class HikvisionDevice extends BaseDevice {
 
     async setInvasionAreaCoordinates(coordinates: InvasionAreaCoordinate[]) {
         const fieldDetectionRes = await this.getDigestClient().fetch(
-            this.buildURL(`/ISAPI/Smart/FieldDetection/1`),
+            this.buildURL('/ISAPI/Smart/FieldDetection/1'),
             {
                 signal: this.timeoutSignal
             }
@@ -129,7 +129,7 @@ export class HikvisionDevice extends BaseDevice {
         }
 
         const res = await this.getDigestClient().fetch(
-            this.buildURL(`/ISAPI/Smart/FieldDetection/1`),
+            this.buildURL('/ISAPI/Smart/FieldDetection/1'),
             {
                 method: 'put',
                 headers: {
@@ -268,7 +268,7 @@ export class HikvisionDevice extends BaseDevice {
         }
 
         const updateRes = await this.getDigestClient().fetch(
-            this.buildURL(`/ISAPI/System/time`),
+            this.buildURL('/ISAPI/System/time'),
             {
                 method: 'put',
                 headers: {
@@ -288,7 +288,7 @@ export class HikvisionDevice extends BaseDevice {
 
         if (timeConfiguration.ntp.enabled) {
             const updateRes = await this.getDigestClient().fetch(
-                this.buildURL(`/ISAPI/System/time/ntpServers/1`),
+                this.buildURL('/ISAPI/System/time/ntpServers/1'),
                 {
                     method: 'put',
                     headers: {
@@ -316,7 +316,7 @@ export class HikvisionDevice extends BaseDevice {
 
     async getCurrentTime(): Promise<Date> {
         const res = await this.getDigestClient().fetch(
-            this.buildURL(`/ISAPI/System/time`),
+            this.buildURL('/ISAPI/System/time'),
             {
                 signal: this.timeoutSignal
             }
@@ -337,7 +337,7 @@ export class HikvisionDevice extends BaseDevice {
 
     async setCurrentTime(date: Date) {
         const res = await this.getDigestClient().fetch(
-            this.buildURL(`/ISAPI/System/time`),
+            this.buildURL('/ISAPI/System/time'),
             {
                 signal: this.timeoutSignal
             }
@@ -351,7 +351,7 @@ export class HikvisionDevice extends BaseDevice {
         timeData.Time.localTime = moment(date).format();
 
         const updateRes = await this.getDigestClient().fetch(
-            this.buildURL(`/ISAPI/System/time`),
+            this.buildURL('/ISAPI/System/time'),
             {
                 method: 'put',
                 headers: {
@@ -369,7 +369,7 @@ export class HikvisionDevice extends BaseDevice {
 
     public async reboot() {
         const resp = await this.getDigestClient().fetch(
-            this.buildURL(`/ISAPI/System/reboot`),
+            this.buildURL('/ISAPI/System/reboot'),
             {
                 method: 'put',
                 signal: this.timeoutSignal
@@ -540,7 +540,7 @@ export class HikvisionDevice extends BaseDevice {
 
     public async setRecordingScheduleConfiguration(recordingScheduleConfiguration: RecordingScheduleConfiguration[]) {
         const resp = await this.getDigestClient().fetch(
-            this.buildURL(`/ISAPI/ContentMgmt/record/tracks`),
+            this.buildURL('/ISAPI/ContentMgmt/record/tracks'),
             {
                 signal: this.timeoutSignal
             }
@@ -616,7 +616,7 @@ export class HikvisionDevice extends BaseDevice {
         }
 
         const updateResp = await this.getDigestClient().fetch(
-            this.buildURL(`/ISAPI/ContentMgmt/record/tracks`),
+            this.buildURL('/ISAPI/ContentMgmt/record/tracks'),
             {
                 method: 'put',
                 headers: {
@@ -639,7 +639,7 @@ export class HikvisionDevice extends BaseDevice {
 
     public async getHddList(): Promise<Hdd[]> {
         const res = await this.getDigestClient().fetch(
-            this.buildURL(`/ISAPI/ContentMgmt/Storage/hdd`),
+            this.buildURL('/ISAPI/ContentMgmt/Storage/hdd'),
             {
                 signal: this.timeoutSignal
             }
@@ -707,9 +707,290 @@ export class HikvisionDevice extends BaseDevice {
         }
     }
 
+    public async getCapabilities(): Promise<Capabilities> {
+        const res = await this.getDigestClient().fetch(
+            this.buildURL('/ISAPI/System/capabilities'),
+            {
+                signal: this.timeoutSignal
+            }
+        );
+
+        if (res.status !== 200) {
+            throw new HttpRequestError();
+        }
+
+        const capabilities = this.xmlParser.parse(await res.text()).DeviceCap;
+
+        return {
+            defocus: parseBoolean(capabilities?.SmartCap?.isSupportDefocusDetection) ?? false,
+            sceneChange: parseBoolean(capabilities?.SmartCap?.isSupportSceneChangeDetection) ?? false,
+        };
+    }
+
+    public async setDefocusConfiguration(config: DefocusConfiguration) {
+        const defocusRes = await this.getDigestClient().fetch(
+            this.buildURL('/ISAPI/Smart/DefocusDetection/1'),
+            {
+                signal: this.timeoutSignal
+            }
+        );
+
+        if (defocusRes.status !== 200) {
+            throw new HttpRequestError();
+        }
+
+        const defocusDetectionConfig = this.xmlParser.parse(await defocusRes.text());
+        const previousDefocusDetectionConfig = JSON.stringify(defocusDetectionConfig);
+
+        defocusDetectionConfig.DefocusDetection.enabled = config.enabled;
+        defocusDetectionConfig.DefocusDetection.sensitivityLevel = config.sensitivityLevel;
+
+        if (previousDefocusDetectionConfig === JSON.stringify(defocusDetectionConfig)) {
+            return;
+        }
+
+        const res = await this.getDigestClient().fetch(
+            this.buildURL('/ISAPI/Smart/DefocusDetection/1'),
+            {
+                method: 'put',
+                headers: {
+                    'content-type': 'application/xml',
+                },
+                body: this.xmlBuilder.build(defocusDetectionConfig),
+                signal: this.timeoutSignal
+            }
+        );
+
+        if (res.status !== 200) {
+            throw new HttpRequestError();
+        }
+
+        const updateRes = this.xmlParser.parse(await res.text());
+        if (Number(updateRes?.ResponseStatus?.statusCode) !== 1 || updateRes?.ResponseStatus?.subStatusCode !== 'ok') {
+            throw new HttpRequestError();
+        }
+    }
+
+    public async setDefocusTriggerConfiguration(config: DefocusTriggerConfiguration) {
+        const defocusTriggerRes = await this.getDigestClient().fetch(
+            this.buildURL('/ISAPI/Event/triggers/defocus-1'),
+            {
+                signal: this.timeoutSignal
+            }
+        );
+
+        if (defocusTriggerRes.status !== 200) {
+            throw new HttpRequestError();
+        }
+
+        const defocusTriggerConfig = this.xmlParser.parse(await defocusTriggerRes.text());
+        const previousDefocusTriggerConfig = JSON.stringify(defocusTriggerConfig);
+
+        if (!defocusTriggerConfig.EventTrigger.EventTriggerNotificationList) {
+            defocusTriggerConfig.EventTrigger.EventTriggerNotificationList = {};
+        }
+
+        if (!defocusTriggerConfig.EventTrigger.EventTriggerNotificationList.EventTriggerNotification) {
+            defocusTriggerConfig.EventTrigger.EventTriggerNotificationList.EventTriggerNotification = [];
+        } else if (!Array.isArray(defocusTriggerConfig.EventTrigger.EventTriggerNotificationList.EventTriggerNotification)) {
+            defocusTriggerConfig.EventTrigger.EventTriggerNotificationList.EventTriggerNotification = [defocusTriggerConfig.EventTrigger.EventTriggerNotificationList.EventTriggerNotification];
+        }
+
+        if (!config.email) {
+            defocusTriggerConfig.EventTrigger.EventTriggerNotificationList.EventTriggerNotification = defocusTriggerConfig.EventTrigger.EventTriggerNotificationList.EventTriggerNotification.filter(
+                (notification: Record<string, unknown>) => notification.notificationMethod !== 'email'
+            );
+        }
+
+        if (!config.io) {
+            defocusTriggerConfig.EventTrigger.EventTriggerNotificationList.EventTriggerNotification = defocusTriggerConfig.EventTrigger.EventTriggerNotificationList.EventTriggerNotification.filter(
+                (notification: Record<string, unknown>) => notification.notificationMethod !== 'IO'
+            );
+        }
+
+        if (!config.surveillanceCenter) {
+            defocusTriggerConfig.EventTrigger.EventTriggerNotificationList.EventTriggerNotification = defocusTriggerConfig.EventTrigger.EventTriggerNotificationList.EventTriggerNotification.filter(
+                (notification: Record<string, unknown>) => notification.notificationMethod !== 'center'
+            );
+        }
+
+        if (config.surveillanceCenter) {
+            defocusTriggerConfig.EventTrigger.EventTriggerNotificationList.EventTriggerNotification.push({
+                id: 'center',
+                notificationMethod: 'center',
+                notificationRecurrence: 'beginning'
+            });
+        }
+
+        if (config.email) {
+            defocusTriggerConfig.EventTrigger.EventTriggerNotificationList.EventTriggerNotification.push({
+                id: 'email',
+                notificationMethod: 'email',
+                notificationRecurrence: 'beginning'
+            });
+        }
+
+        if (config.io) {
+            defocusTriggerConfig.EventTrigger.EventTriggerNotificationList.EventTriggerNotification.push({
+                id: 'IO-1',
+                notificationMethod: 'IO',
+                notificationRecurrence: 'beginning',
+                outputIOPortID: '1'
+            });
+        }
+
+        if (previousDefocusTriggerConfig === JSON.stringify(defocusTriggerConfig)) {
+            return;
+        }
+
+        const res = await this.getDigestClient().fetch(
+            this.buildURL('/ISAPI/Event/triggers/defocus-1'),
+            {
+                method: 'put',
+                headers: {
+                    'content-type': 'application/xml',
+                },
+                body: this.xmlBuilder.build(defocusTriggerConfig),
+                signal: this.timeoutSignal
+            }
+        );
+
+        if (res.status !== 200) {
+            throw new HttpRequestError();
+        }
+
+        const updateRes = this.xmlParser.parse(await res.text());
+        if (Number(updateRes?.ResponseStatus?.statusCode) !== 1 || updateRes?.ResponseStatus?.subStatusCode !== 'ok') {
+            throw new HttpRequestError();
+        }
+    }
+
+    public async setSceneChangeConfiguration(config: SceneChangeConfiguration) {
+        const defocusRes = await this.getDigestClient().fetch(
+            this.buildURL('/ISAPI/Smart/SceneChangeDetection/1'),
+            {
+                signal: this.timeoutSignal
+            }
+        );
+
+        if (defocusRes.status !== 200) {
+            throw new HttpRequestError();
+        }
+
+        const sceneChangeConfig = this.xmlParser.parse(await defocusRes.text());
+        const previousSceneChangeConfig = JSON.stringify(sceneChangeConfig);
+
+        sceneChangeConfig.SceneChangeDetection.enabled = config.enabled;
+        sceneChangeConfig.SceneChangeDetection.sensitivityLevel = config.sensitivityLevel;
+
+        if (previousSceneChangeConfig === JSON.stringify(sceneChangeConfig)) {
+            return;
+        }
+
+        const res = await this.getDigestClient().fetch(
+            this.buildURL('/ISAPI/Smart/SceneChangeDetection/1'),
+            {
+                method: 'put',
+                headers: {
+                    'content-type': 'application/xml',
+                },
+                body: this.xmlBuilder.build(sceneChangeConfig),
+                signal: this.timeoutSignal
+            }
+        );
+
+        if (res.status !== 200) {
+            throw new HttpRequestError();
+        }
+
+        const updateRes = this.xmlParser.parse(await res.text());
+        if (Number(updateRes?.ResponseStatus?.statusCode) !== 1 || updateRes?.ResponseStatus?.subStatusCode !== 'ok') {
+            throw new HttpRequestError();
+        }
+    }
+
+    public async setSceneChangeTriggerConfiguration(config: SceneChangeTriggerConfiguration) {
+        const sceneChangeTriggerRes = await this.getDigestClient().fetch(
+            this.buildURL('/ISAPI/Event/triggers/scenechangedetection-1'),
+            {
+                signal: this.timeoutSignal
+            }
+        );
+
+        if (sceneChangeTriggerRes.status !== 200) {
+            throw new HttpRequestError();
+        }
+
+        const sceneChangeTriggerConfig = this.xmlParser.parse(await sceneChangeTriggerRes.text());
+        const previousSceneChangeTriggerConfig = JSON.stringify(sceneChangeTriggerConfig);
+
+        if (!sceneChangeTriggerConfig.EventTrigger.EventTriggerNotificationList) {
+            sceneChangeTriggerConfig.EventTrigger.EventTriggerNotificationList = {};
+        }
+
+        if (!sceneChangeTriggerConfig.EventTrigger.EventTriggerNotificationList.EventTriggerNotification) {
+            sceneChangeTriggerConfig.EventTrigger.EventTriggerNotificationList.EventTriggerNotification = [];
+        } else if (!Array.isArray(sceneChangeTriggerConfig.EventTrigger.EventTriggerNotificationList.EventTriggerNotification)) {
+            sceneChangeTriggerConfig.EventTrigger.EventTriggerNotificationList.EventTriggerNotification = [sceneChangeTriggerConfig.EventTrigger.EventTriggerNotificationList.EventTriggerNotification];
+        }
+
+        if (!config.email) {
+            sceneChangeTriggerConfig.EventTrigger.EventTriggerNotificationList.EventTriggerNotification = sceneChangeTriggerConfig.EventTrigger.EventTriggerNotificationList.EventTriggerNotification.filter(
+                (notification: Record<string, unknown>) => notification.notificationMethod !== 'email'
+            );
+        }
+
+        if (!config.surveillanceCenter) {
+            sceneChangeTriggerConfig.EventTrigger.EventTriggerNotificationList.EventTriggerNotification = sceneChangeTriggerConfig.EventTrigger.EventTriggerNotificationList.EventTriggerNotification.filter(
+                (notification: Record<string, unknown>) => notification.notificationMethod !== 'center'
+            );
+        }
+
+        if (config.surveillanceCenter) {
+            sceneChangeTriggerConfig.EventTrigger.EventTriggerNotificationList.EventTriggerNotification.push({
+                id: 'center',
+                notificationMethod: 'center',
+                notificationRecurrence: 'beginning'
+            });
+        }
+
+        if (config.email) {
+            sceneChangeTriggerConfig.EventTrigger.EventTriggerNotificationList.EventTriggerNotification.push({
+                id: 'email',
+                notificationMethod: 'email',
+                notificationRecurrence: 'beginning'
+            });
+        }
+
+        if (previousSceneChangeTriggerConfig === JSON.stringify(sceneChangeTriggerConfig)) {
+            return;
+        }
+
+        const res = await this.getDigestClient().fetch(
+            this.buildURL('/ISAPI/Event/triggers/scenechangedetection-1'),
+            {
+                method: 'put',
+                headers: {
+                    'content-type': 'application/xml',
+                },
+                body: this.xmlBuilder.build(sceneChangeTriggerConfig),
+                signal: this.timeoutSignal
+            }
+        );
+
+        if (res.status !== 200) {
+            throw new HttpRequestError();
+        }
+
+        const updateRes = this.xmlParser.parse(await res.text());
+        if (Number(updateRes?.ResponseStatus?.statusCode) !== 1 || updateRes?.ResponseStatus?.subStatusCode !== 'ok') {
+            throw new HttpRequestError();
+        }
+    }
+
     private async getCameraChannels() {
         const res = await this.getDigestClient().fetch(
-            this.buildURL(`/ISAPI/Streaming/channels`),
+            this.buildURL('/ISAPI/Streaming/channels'),
             {
                 signal: this.timeoutSignal
             }
