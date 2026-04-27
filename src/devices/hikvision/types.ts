@@ -97,3 +97,15 @@ export type RecordingScheduleConfiguration = {
         }
     },
 }
+
+export type Hdd = {
+    id: number;
+    capacity: number;
+    freeSpace: number;
+};
+
+export type SetStorageQuotaOptions = {
+    hddId?: number;
+    videoQuotaRatio: number; // 0 to 100
+    pictureQuotaRatio: number; // 0 to 100
+};

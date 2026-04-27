@@ -3,7 +3,7 @@ import moment from 'moment-timezone';
 import { HttpRequestError, MissingConfigurationError, NotImplementedError } from "../../errors.js";
 import { InvasionAreaCoordinate } from "../../types.js";
 import { BaseDevice } from "../base.js";
-import { ImageQualityConfiguration, InvasionAreaPoint, OverlayConfiguration, TimeConfiguration } from './types.js';
+import { DddnsConfiguration, ImageQualityConfiguration, InvasionAreaPoint, OverlayConfiguration, TimeConfiguration } from './types.js';
 import { timezones } from './constants.js';
 
 export class DahuaDevice extends BaseDevice {
@@ -392,6 +392,28 @@ export class DahuaDevice extends BaseDevice {
             await this.setConfigs(osdQueryParams);
         }
 
+    }
+
+    public async setDdnsConfiguration(configuration: DddnsConfiguration) {
+        if (!configuration.enabled) {
+            return this.setConfigs(new URLSearchParams(
+                [
+                    ['DDNS[0].Enable', 'false'],
+                ]
+            ), { encodeSpaces: true });
+        }
+
+        return this.setConfigs(new URLSearchParams(
+            [
+                ['DDNS[0].Enable', 'true'],
+                ['DDNS[0].Address', configuration.address],
+                ['DDNS[0].HostName', configuration.hostname],
+                ['DDNS[0].Port', configuration.port.toString()],
+                ['DDNS[0].Protocol', configuration.protocol],
+                ['DDNS[0].UserName', configuration.username],
+                ['DDNS[0].Password', configuration.password],
+            ]
+        ), { encodeSpaces: true });
     }
 
     private async removeCurrentAreaInvasionCoordinates(ruleConfig: string, ruleNumber: number) {

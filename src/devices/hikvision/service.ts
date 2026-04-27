@@ -3,7 +3,7 @@ import moment from 'moment-timezone';
 import { BaseDevice } from "../base.js";
 import { HttpRequestError, MissingConfigurationError } from "../../errors.js";
 import { DeviceConfiguration, InvasionAreaCoordinate } from "../../types.js";
-import { FieldDetectionRegion, ImageQualityConfiguration, OverlayConfiguration, RecordingScheduleConfiguration, TimeConfiguration } from "./types.js";
+import { FieldDetectionRegion, Hdd, ImageQualityConfiguration, OverlayConfiguration, RecordingScheduleConfiguration, SetStorageQuotaOptions, TimeConfiguration } from "./types.js";
 import { parseBoolean, parseDimension } from "./utils.js";
 
 export class HikvisionDevice extends BaseDevice {
@@ -634,6 +634,76 @@ export class HikvisionDevice extends BaseDevice {
         const updateRes = this.xmlParser.parse(await updateResp.text());
         if (Number(updateRes?.ResponseStatus?.statusCode) !== 1 || updateRes?.ResponseStatus?.subStatusCode !== 'ok') {
             throw new HttpRequestError();
+        }
+    }
+
+    public async getHddList(): Promise<Hdd[]> {
+        const res = await this.getDigestClient().fetch(
+            this.buildURL(`/ISAPI/ContentMgmt/Storage/hdd`),
+            {
+                signal: this.timeoutSignal
+            }
+        );
+
+        if (res.status !== 200) {
+            throw new HttpRequestError();
+        }
+
+        const payload = this.xmlParser.parse(await res.text());
+        const rawHddList = payload?.hddList?.hdd;
+
+        const hdds = Array.isArray(rawHddList)
+            ? rawHddList
+            : rawHddList !== undefined && rawHddList !== null
+                ? [rawHddList]
+                : [];
+
+        return hdds.map((hdd: Record<string, unknown>) => ({
+            id: Number(hdd.id),
+            capacity: Number(hdd.capacity),
+            freeSpace: Number(hdd.freeSpace),
+        }));
+    }
+
+    public async setStorageQuota(options: SetStorageQuotaOptions) {
+        const res = await this.getDigestClient().fetch(
+            this.buildURL('/ISAPI/ContentMgmt/Storage/quota' + (options.hddId !== undefined ? `/${options.hddId}` : '')),
+            {
+                signal: this.timeoutSignal
+            }
+        );
+
+        if (res.status !== 200) {
+            throw new HttpRequestError();
+        }
+
+        const storageQuota = this.xmlParser.parse(await res.text());
+        const quota = storageQuota.diskQuotaList?.diskQuota ?? storageQuota.diskQuota;
+
+        if (quota.videoQuotaRatio !== options.videoQuotaRatio || quota.pictureQuotaRatio !== options.pictureQuotaRatio) {
+            quota.videoQuotaRatio = options.videoQuotaRatio;
+            quota.pictureQuotaRatio = options.pictureQuotaRatio;
+
+            const resp = await this.getDigestClient().fetch(
+                this.buildURL(`/ISAPI/ContentMgmt/Storage/quota${options.hddId !== undefined ? `/${options.hddId}` : ''}`),
+                {
+                    method: 'put',
+                    headers: {
+                        'content-type': 'application/xml',
+                    },
+                    body: this.xmlBuilder.build(storageQuota),
+                    signal: this.timeoutSignal
+                }
+            );
+
+            if (resp.status !== 200) {
+                throw new HttpRequestError();
+            }
+
+            const res = this.xmlParser.parse(await resp.text());
+            if (Number(res?.ResponseStatus?.statusCode) !== 1 || res?.ResponseStatus?.subStatusCode !== 'ok') {
+                throw new HttpRequestError();
+            }
         }
     }
 
