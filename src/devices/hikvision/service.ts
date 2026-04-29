@@ -3,7 +3,7 @@ import moment from 'moment-timezone';
 import { BaseDevice } from '../base.js';
 import { HttpRequestError, MissingConfigurationError } from '../../errors.js';
 import { DeviceConfiguration, InvasionAreaCoordinate } from '../../types.js';
-import { Capabilities, DefocusConfiguration, DefocusTriggerConfiguration, FieldDetectionRegion, Hdd, ImageQualityConfiguration, OverlayConfiguration, RecordingScheduleConfiguration, SceneChangeConfiguration, SceneChangeTriggerConfiguration, SetStorageQuotaOptions, TimeConfiguration } from './types.js';
+import { Capabilities, DefocusConfiguration, DefocusTriggerConfiguration, DeviceInformation, FieldDetectionConfiguration, FieldDetectionRegion, Hdd, ImageQualityConfiguration, OverlayConfiguration, RecordingScheduleConfiguration, SceneChangeConfiguration, SceneChangeTriggerConfiguration, SetStorageQuotaOptions, TimeConfiguration } from './types.js';
 import { parseBoolean, parseDimension } from './utils.js';
 
 export class HikvisionDevice extends BaseDevice {
@@ -985,6 +985,153 @@ export class HikvisionDevice extends BaseDevice {
         const updateRes = this.xmlParser.parse(await res.text());
         if (Number(updateRes?.ResponseStatus?.statusCode) !== 1 || updateRes?.ResponseStatus?.subStatusCode !== 'ok') {
             throw new HttpRequestError();
+        }
+    }
+
+    public async getDeviceInformation(): Promise<DeviceInformation> {
+        const res = await this.getDigestClient().fetch(
+            this.buildURL('/ISAPI/System/deviceInfo'),
+            {
+                signal: this.timeoutSignal
+            }
+        );
+
+        if (res.status !== 200) {
+            throw new HttpRequestError();
+        }
+
+        const deviceInfo = await this.xmlParser.parse(await res.text());
+
+        return {
+            deviceName: deviceInfo?.DeviceInfo?.deviceName ?? '',
+            model: deviceInfo?.DeviceInfo?.model ?? '',
+            serialNumber: deviceInfo?.DeviceInfo?.serialNumber ?? '',
+            firmwareVersion: deviceInfo?.DeviceInfo?.firmwareVersion ?? '',
+        };
+    }
+
+    public async setFieldDetectionConfiguration(configuration: FieldDetectionConfiguration) {
+        const fieldDetectionRes = await this.getDigestClient().fetch(
+            this.buildURL('/ISAPI/Smart/FieldDetection/1'),
+            {
+                signal: this.timeoutSignal
+            }
+        );
+
+        if (fieldDetectionRes.status !== 200) {
+            throw new HttpRequestError();
+        }
+
+        const fieldDetectionConfig = this.xmlParser.parse(await fieldDetectionRes.text());
+        fieldDetectionConfig.FieldDetection.enabled = configuration.enabled;
+
+        let fieldDetectionRegions = fieldDetectionConfig.FieldDetection.FieldDetectionRegionList?.FieldDetectionRegion ?? [];
+        if (!Array.isArray(fieldDetectionRegions)) {
+            fieldDetectionRegions = [fieldDetectionRegions];
+        }
+
+        for (const region of fieldDetectionRegions) {
+            const newConfig = configuration.regions.find((config) => config.id === Number(region.id));
+            if (!newConfig) {
+                continue;
+            }
+
+            if (newConfig.detectionTarget) {
+                region.detectionTarget = newConfig.detectionTarget.join(',');
+            }
+
+            if (typeof newConfig.sensitivityLevel === 'number') {
+                region.sensitivityLevel = newConfig.sensitivityLevel;
+            }
+
+            if (typeof newConfig.timeThreshold === 'number') {
+                region.timeThreshold = newConfig.timeThreshold;
+            }
+
+            if (typeof newConfig.confidenceLevel === 'string') {
+                region.alarmConfidence = newConfig.confidenceLevel;
+            }
+        }
+
+        fieldDetectionConfig.FieldDetection.FieldDetectionRegionList.FieldDetectionRegion = fieldDetectionRegions;
+
+        const res = await this.getDigestClient().fetch(
+            this.buildURL('/ISAPI/Smart/FieldDetection/1'),
+            {
+                method: 'put',
+                headers: {
+                    'content-type': 'application/xml',
+                },
+                body: this.xmlBuilder.build(fieldDetectionConfig),
+                signal: this.timeoutSignal
+            }
+        );
+
+        if (res.status !== 200) {
+            throw new HttpRequestError();
+        }
+
+        const updateRes = this.xmlParser.parse(await res.text());
+        if (Number(updateRes?.ResponseStatus?.statusCode) !== 1 || updateRes?.ResponseStatus?.subStatusCode !== 'ok') {
+            throw new HttpRequestError();
+        }
+
+        if (configuration.schedule) {
+            const timeSchedule = {
+                'TimeBlock': [
+                    {
+                        'dayOfWeek': 1,
+                        'TimeRange': { 'beginTime': configuration.schedule.monday.start, 'endTime': configuration.schedule.monday.end }
+                    },
+                    {
+                        'dayOfWeek': 2,
+                        'TimeRange': { 'beginTime': configuration.schedule.tuesday.start, 'endTime': configuration.schedule.tuesday.end }
+                    },
+                    {
+                        'dayOfWeek': 3,
+                        'TimeRange': { 'beginTime': configuration.schedule.wednesday.start, 'endTime': configuration.schedule.wednesday.end }
+                    },
+                    {
+                        'dayOfWeek': 4,
+                        'TimeRange': { 'beginTime': configuration.schedule.thursday.start, 'endTime': configuration.schedule.thursday.end }
+                    },
+                    {
+                        'dayOfWeek': 5,
+                        'TimeRange': { 'beginTime': configuration.schedule.friday.start, 'endTime': configuration.schedule.friday.end }
+                    },
+                    {
+                        'dayOfWeek': 6,
+                        'TimeRange': { 'beginTime': configuration.schedule.saturday.start, 'endTime': configuration.schedule.saturday.end }
+                    },
+                    {
+                        'dayOfWeek': 7,
+                        'TimeRange': { 'beginTime': configuration.schedule.sunday.start, 'endTime': configuration.schedule.sunday.end }
+                    },
+                ],
+                '@_size': '8'
+            };
+            const schedule = { '?xml': { '@_version': '1.0', '@_encoding': 'UTF-8' }, 'Schedule': { 'id': 'fielddetection_video1', 'eventType': 'fielddetection', 'videoInputChannelID': 1, 'TimeBlockList': timeSchedule, '@_version': '2.0', '@_xmlns': 'http://www.hikvision.com/ver20/XMLSchema' } };
+
+            const res = await this.getDigestClient().fetch(
+                this.buildURL('/ISAPI/Event/schedules/fieldDetections/fielddetection_video1'),
+                {
+                    method: 'put',
+                    headers: {
+                        'content-type': 'application/xml',
+                    },
+                    body: this.xmlBuilder.build(schedule),
+                    signal: this.timeoutSignal
+                }
+            );
+
+            if (res.status !== 200) {
+                throw new HttpRequestError();
+            }
+
+            const updateRes = this.xmlParser.parse(await res.text());
+            if (Number(updateRes?.ResponseStatus?.statusCode) !== 1 || updateRes?.ResponseStatus?.subStatusCode !== 'ok') {
+                throw new HttpRequestError();
+            }
         }
     }
 
