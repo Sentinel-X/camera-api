@@ -136,3 +136,51 @@ export type SceneChangeTriggerConfiguration = {
     surveillanceCenter: boolean;
     email: boolean;
 };
+
+export type DeviceInformation = {
+    deviceName: string;
+    model: string;
+    serialNumber: string;
+    firmwareVersion: string;
+};
+
+export type FieldDetectionConfiguration = {
+    enabled: boolean;
+    regions: {
+        id: number;
+        sensitivityLevel?: number; // 1 to 100
+        detectionTarget?: ('human' | 'vehicle')[];
+        timeThreshold?: number; // in seconds 1-60
+        confidenceLevel?: 'low' | 'mediumLow' | 'mediumHigh' | 'high';
+    }[];
+    schedule?: {
+        monday: {
+            start: string; // e.g: "00:00:00"
+            end: string; // e.g: "24:00:00"
+        }
+        tuesday: {
+            start: string; // e.g: "00:00:00"
+            end: string; // e.g: "24:00:00"
+        }
+        wednesday: {
+            start: string; // e.g: "00:00:00"
+            end: string; // e.g: "24:00:00"
+        }
+        thursday: {
+            start: string; // e.g: "00:00:00"
+            end: string; // e.g: "24:00:00"
+        }
+        friday: {
+            start: string; // e.g: "00:00:00"
+            end: string; // e.g: "24:00:00"
+        }
+        saturday: {
+            start: string; // e.g: "00:00:00"
+            end: string; // e.g: "24:00:00"
+        }
+        sunday: {
+            start: string; // e.g: "00:00:00"
+            end: string; // e.g: "24:00:00"
+        }
+    };
+};

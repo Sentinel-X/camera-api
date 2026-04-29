@@ -1677,6 +1677,308 @@ describe('HikvisionDevice', () => {
         }
       });
 
+      it('returns parsed device information from camera payload', async () => {
+        const payload = `<?xml version="1.0" encoding="UTF-8"?>
+        <DeviceInfo version="2.0" xmlns="http://www.hikvision.com/ver20/XMLSchema">
+          <deviceName>L55759476</deviceName>
+          <model>DS-2CD3066G2-IS</model>
+          <serialNumber>DS-2CD3066G2-IS20240108AAWRL55759476</serialNumber>
+          <firmwareVersion>V5.7.52</firmwareVersion>
+        </DeviceInfo>`;
+
+        nock('http://hikvision.test:80')
+          .get('/ISAPI/System/deviceInfo')
+          .reply(200, payload);
+
+        const device = new HikvisionDevice(defaultConfig);
+
+        const information = await device.getDeviceInformation();
+
+        expect(information).to.deep.equal({
+          deviceName: 'L55759476',
+          model: 'DS-2CD3066G2-IS',
+          serialNumber: 'DS-2CD3066G2-IS20240108AAWRL55759476',
+          firmwareVersion: 'V5.7.52',
+        });
+      });
+
+      it('throws HttpRequestError when getDeviceInformation request fails', async () => {
+        nock('http://hikvision.test:80')
+          .get('/ISAPI/System/deviceInfo')
+          .reply(500, 'error');
+
+        const device = new HikvisionDevice(defaultConfig);
+
+        try {
+          await device.getDeviceInformation();
+          expect.fail('Function should have thrown');
+        } catch (error) {
+          expect(error).to.be.instanceOf(HttpRequestError);
+        }
+      });
+
+      it('updates field detection configuration and schedule using camera payload', async () => {
+        const getPayload = `<?xml version="1.0" encoding="UTF-8"?>
+        <FieldDetection version="2.0" xmlns="http://www.hikvision.com/ver20/XMLSchema">
+          <id>1</id>
+          <enabled>true</enabled>
+          <FieldDetectionRegionList size="2">
+            <FieldDetectionRegion>
+              <id>1</id>
+              <enabled>false</enabled>
+              <sensitivityLevel>50</sensitivityLevel>
+              <timeThreshold>0</timeThreshold>
+              <detectionTarget>human</detectionTarget>
+              <alarmConfidence opt="low,mediumLow,mediumHigh,high">low</alarmConfidence>
+            </FieldDetectionRegion>
+            <FieldDetectionRegion>
+              <id>2</id>
+              <enabled>false</enabled>
+              <sensitivityLevel>50</sensitivityLevel>
+              <timeThreshold>0</timeThreshold>
+              <detectionTarget>human</detectionTarget>
+              <alarmConfidence opt="low,mediumLow,mediumHigh,high">low</alarmConfidence>
+            </FieldDetectionRegion>
+          </FieldDetectionRegionList>
+        </FieldDetection>`;
+
+        const putResponse = `<?xml version="1.0" encoding="UTF-8"?>
+        <ResponseStatus>
+          <statusCode>1</statusCode>
+          <subStatusCode>ok</subStatusCode>
+        </ResponseStatus>`;
+
+        let fieldDetectionPutBody = '';
+        let schedulePutBody = '';
+
+        nock('http://hikvision.test:80')
+          .get('/ISAPI/Smart/FieldDetection/1')
+          .reply(200, getPayload);
+
+        nock('http://hikvision.test:80')
+          .put('/ISAPI/Smart/FieldDetection/1', (body: string) => {
+            fieldDetectionPutBody = String(body);
+            return true;
+          })
+          .reply(200, putResponse);
+
+        nock('http://hikvision.test:80')
+          .put('/ISAPI/Event/schedules/fieldDetections/fielddetection_video1', (body: string) => {
+            schedulePutBody = String(body);
+            return true;
+          })
+          .reply(200, putResponse);
+
+        const device = new HikvisionDevice(defaultConfig);
+
+        await device.setFieldDetectionConfiguration({
+          enabled: false,
+          regions: [
+            {
+              id: 1,
+              sensitivityLevel: 25,
+              detectionTarget: ['human', 'vehicle'],
+              timeThreshold: 15,
+              confidenceLevel: 'mediumHigh'
+            }
+          ],
+          schedule: {
+            monday: { start: '01:00:00', end: '02:00:00' },
+            tuesday: { start: '03:00:00', end: '04:00:00' },
+            wednesday: { start: '05:00:00', end: '06:00:00' },
+            thursday: { start: '07:00:00', end: '08:00:00' },
+            friday: { start: '09:00:00', end: '10:00:00' },
+            saturday: { start: '11:00:00', end: '12:00:00' },
+            sunday: { start: '13:00:00', end: '24:00:00' },
+          }
+        });
+
+        expect(fieldDetectionPutBody).to.include('<enabled>false</enabled>');
+        expect(fieldDetectionPutBody).to.include('<sensitivityLevel>25</sensitivityLevel>');
+        expect(fieldDetectionPutBody).to.include('<timeThreshold>15</timeThreshold>');
+        expect(fieldDetectionPutBody).to.include('<detectionTarget>human,vehicle</detectionTarget>');
+        expect(fieldDetectionPutBody).to.include('<alarmConfidence>mediumHigh</alarmConfidence>');
+
+        expect(schedulePutBody).to.include('<id>fielddetection_video1</id>');
+        expect(schedulePutBody).to.include('<eventType>fielddetection</eventType>');
+        expect(schedulePutBody).to.include('<TimeBlockList size="8">');
+        expect(schedulePutBody).to.include('<dayOfWeek>1</dayOfWeek>');
+        expect(schedulePutBody).to.include('<beginTime>01:00:00</beginTime>');
+        expect(schedulePutBody).to.include('<endTime>02:00:00</endTime>');
+        expect(schedulePutBody).to.include('<dayOfWeek>7</dayOfWeek>');
+        expect(schedulePutBody).to.include('<beginTime>13:00:00</beginTime>');
+        expect(schedulePutBody).to.include('<endTime>24:00:00</endTime>');
+      });
+
+      it('updates field detection configuration without schedule update when schedule is not provided', async () => {
+        const getPayload = `<?xml version="1.0" encoding="UTF-8"?>
+        <FieldDetection>
+          <enabled>true</enabled>
+          <FieldDetectionRegionList>
+            <FieldDetectionRegion>
+              <id>1</id>
+              <sensitivityLevel>50</sensitivityLevel>
+              <timeThreshold>0</timeThreshold>
+              <detectionTarget>human</detectionTarget>
+              <alarmConfidence>low</alarmConfidence>
+            </FieldDetectionRegion>
+          </FieldDetectionRegionList>
+        </FieldDetection>`;
+
+        const putResponse = `<?xml version="1.0" encoding="UTF-8"?>
+        <ResponseStatus>
+          <statusCode>1</statusCode>
+          <subStatusCode>ok</subStatusCode>
+        </ResponseStatus>`;
+
+        let fieldDetectionPutBody = '';
+
+        nock('http://hikvision.test:80')
+          .get('/ISAPI/Smart/FieldDetection/1')
+          .reply(200, getPayload);
+
+        nock('http://hikvision.test:80')
+          .put('/ISAPI/Smart/FieldDetection/1', (body: string) => {
+            fieldDetectionPutBody = String(body);
+            return true;
+          })
+          .reply(200, putResponse);
+
+        const device = new HikvisionDevice(defaultConfig);
+
+        await device.setFieldDetectionConfiguration({
+          enabled: true,
+          regions: [
+            {
+              id: 1,
+              sensitivityLevel: 60,
+              confidenceLevel: 'high'
+            }
+          ]
+        });
+
+        expect(fieldDetectionPutBody).to.include('<sensitivityLevel>60</sensitivityLevel>');
+        expect(fieldDetectionPutBody).to.include('<alarmConfidence>high</alarmConfidence>');
+      });
+
+      it('throws HttpRequestError when field detection configuration get request fails', async () => {
+        nock('http://hikvision.test:80')
+          .get('/ISAPI/Smart/FieldDetection/1')
+          .reply(500, 'error');
+
+        const device = new HikvisionDevice(defaultConfig);
+
+        try {
+          await device.setFieldDetectionConfiguration({
+            enabled: true,
+            regions: []
+          });
+          expect.fail('Function should have thrown');
+        } catch (error) {
+          expect(error).to.be.instanceOf(HttpRequestError);
+        }
+      });
+
+      it('throws HttpRequestError when field detection configuration update response is invalid', async () => {
+        const getPayload = `<?xml version="1.0" encoding="UTF-8"?>
+        <FieldDetection>
+          <enabled>true</enabled>
+          <FieldDetectionRegionList>
+            <FieldDetectionRegion>
+              <id>1</id>
+            </FieldDetectionRegion>
+          </FieldDetectionRegionList>
+        </FieldDetection>`;
+
+        const invalidPutResponse = `<?xml version="1.0" encoding="UTF-8"?>
+        <ResponseStatus>
+          <statusCode>2</statusCode>
+          <subStatusCode>error</subStatusCode>
+        </ResponseStatus>`;
+
+        nock('http://hikvision.test:80')
+          .get('/ISAPI/Smart/FieldDetection/1')
+          .reply(200, getPayload);
+
+        nock('http://hikvision.test:80')
+          .put('/ISAPI/Smart/FieldDetection/1')
+          .reply(200, invalidPutResponse);
+
+        const device = new HikvisionDevice(defaultConfig);
+
+        try {
+          await device.setFieldDetectionConfiguration({
+            enabled: false,
+            regions: [
+              {
+                id: 1,
+                sensitivityLevel: 10
+              }
+            ]
+          });
+          expect.fail('Function should have thrown');
+        } catch (error) {
+          expect(error).to.be.instanceOf(HttpRequestError);
+        }
+      });
+
+      it('throws HttpRequestError when field detection schedule update response is invalid', async () => {
+        const getPayload = `<?xml version="1.0" encoding="UTF-8"?>
+        <FieldDetection>
+          <enabled>true</enabled>
+          <FieldDetectionRegionList>
+            <FieldDetectionRegion>
+              <id>1</id>
+            </FieldDetectionRegion>
+          </FieldDetectionRegionList>
+        </FieldDetection>`;
+
+        const okPutResponse = `<?xml version="1.0" encoding="UTF-8"?>
+        <ResponseStatus>
+          <statusCode>1</statusCode>
+          <subStatusCode>ok</subStatusCode>
+        </ResponseStatus>`;
+
+        const invalidPutResponse = `<?xml version="1.0" encoding="UTF-8"?>
+        <ResponseStatus>
+          <statusCode>2</statusCode>
+          <subStatusCode>error</subStatusCode>
+        </ResponseStatus>`;
+
+        nock('http://hikvision.test:80')
+          .get('/ISAPI/Smart/FieldDetection/1')
+          .reply(200, getPayload);
+
+        nock('http://hikvision.test:80')
+          .put('/ISAPI/Smart/FieldDetection/1')
+          .reply(200, okPutResponse);
+
+        nock('http://hikvision.test:80')
+          .put('/ISAPI/Event/schedules/fieldDetections/fielddetection_video1')
+          .reply(200, invalidPutResponse);
+
+        const device = new HikvisionDevice(defaultConfig);
+
+        try {
+          await device.setFieldDetectionConfiguration({
+            enabled: true,
+            regions: [],
+            schedule: {
+              monday: { start: '00:00:00', end: '24:00:00' },
+              tuesday: { start: '00:00:00', end: '24:00:00' },
+              wednesday: { start: '00:00:00', end: '24:00:00' },
+              thursday: { start: '00:00:00', end: '24:00:00' },
+              friday: { start: '00:00:00', end: '24:00:00' },
+              saturday: { start: '00:00:00', end: '24:00:00' },
+              sunday: { start: '00:00:00', end: '24:00:00' },
+            }
+          });
+          expect.fail('Function should have thrown');
+        } catch (error) {
+          expect(error).to.be.instanceOf(HttpRequestError);
+        }
+      });
+
       it('reboots camera when response is ok', async () => {
         const rebootPayload = `<?xml version="1.0" encoding="UTF-8"?>
         <ResponseStatus>
