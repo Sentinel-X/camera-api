@@ -3,7 +3,7 @@ import moment from 'moment-timezone';
 import { BaseDevice } from '../base.js';
 import { HttpRequestError, MissingConfigurationError } from '../../errors.js';
 import { DeviceConfiguration, InvasionAreaCoordinate } from '../../types.js';
-import { Capabilities, DefocusConfiguration, DefocusTriggerConfiguration, DeviceInformation, FieldDetectionConfiguration, FieldDetectionRegion, Hdd, ImageQualityConfiguration, OverlayConfiguration, RecordingScheduleConfiguration, SceneChangeConfiguration, SceneChangeTriggerConfiguration, SetStorageQuotaOptions, TimeConfiguration } from './types.js';
+import { Capabilities, DefocusConfiguration, DefocusTriggerConfiguration, DeviceInformation, FieldDetectionConfiguration, FieldDetectionRegion, Hdd, ImageQualityConfiguration, InvasionAreaScheduleConfiguration, LineCrossingConfiguration, OverlayConfiguration, RecordingScheduleConfiguration, RegionEntranceConfiguration, RegionExitingConfiguration, SceneChangeConfiguration, SceneChangeTriggerConfiguration, SetStorageQuotaOptions, TimeConfiguration } from './types.js';
 import { parseBoolean, parseDimension } from './utils.js';
 
 export class HikvisionDevice extends BaseDevice {
@@ -1077,40 +1077,17 @@ export class HikvisionDevice extends BaseDevice {
         }
 
         if (configuration.schedule) {
-            const timeSchedule = {
-                'TimeBlock': [
-                    {
-                        'dayOfWeek': 1,
-                        'TimeRange': { 'beginTime': configuration.schedule.monday.start, 'endTime': configuration.schedule.monday.end }
-                    },
-                    {
-                        'dayOfWeek': 2,
-                        'TimeRange': { 'beginTime': configuration.schedule.tuesday.start, 'endTime': configuration.schedule.tuesday.end }
-                    },
-                    {
-                        'dayOfWeek': 3,
-                        'TimeRange': { 'beginTime': configuration.schedule.wednesday.start, 'endTime': configuration.schedule.wednesday.end }
-                    },
-                    {
-                        'dayOfWeek': 4,
-                        'TimeRange': { 'beginTime': configuration.schedule.thursday.start, 'endTime': configuration.schedule.thursday.end }
-                    },
-                    {
-                        'dayOfWeek': 5,
-                        'TimeRange': { 'beginTime': configuration.schedule.friday.start, 'endTime': configuration.schedule.friday.end }
-                    },
-                    {
-                        'dayOfWeek': 6,
-                        'TimeRange': { 'beginTime': configuration.schedule.saturday.start, 'endTime': configuration.schedule.saturday.end }
-                    },
-                    {
-                        'dayOfWeek': 7,
-                        'TimeRange': { 'beginTime': configuration.schedule.sunday.start, 'endTime': configuration.schedule.sunday.end }
-                    },
-                ],
-                '@_size': '8'
+            const schedule = {
+                '?xml': { '@_version': '1.0', '@_encoding': 'UTF-8' },
+                'Schedule': {
+                    'id': 'fielddetection_video1',
+                    'eventType': 'fielddetection',
+                    'videoInputChannelID': 1,
+                    'TimeBlockList': this.parseInvasionAreaScheduleToCamera(configuration.schedule),
+                    '@_version': '2.0',
+                    '@_xmlns': 'http://www.hikvision.com/ver20/XMLSchema'
+                }
             };
-            const schedule = { '?xml': { '@_version': '1.0', '@_encoding': 'UTF-8' }, 'Schedule': { 'id': 'fielddetection_video1', 'eventType': 'fielddetection', 'videoInputChannelID': 1, 'TimeBlockList': timeSchedule, '@_version': '2.0', '@_xmlns': 'http://www.hikvision.com/ver20/XMLSchema' } };
 
             const res = await this.getDigestClient().fetch(
                 this.buildURL('/ISAPI/Event/schedules/fieldDetections/fielddetection_video1'),
@@ -1133,6 +1110,340 @@ export class HikvisionDevice extends BaseDevice {
                 throw new HttpRequestError();
             }
         }
+    }
+
+    public async setLineCrossingConfiguration(configuration: LineCrossingConfiguration) {
+        const lineCrossingDetectionRes = await this.getDigestClient().fetch(
+            this.buildURL('/ISAPI/Smart/LineDetection/1'),
+            {
+                signal: this.timeoutSignal
+            }
+        );
+
+        if (lineCrossingDetectionRes.status !== 200) {
+            throw new HttpRequestError();
+        }
+
+        const lineCrossingDetectionConfig = this.xmlParser.parse(await lineCrossingDetectionRes.text());
+        lineCrossingDetectionConfig.LineDetection.enabled = configuration.enabled;
+
+        let lineCrossingRegions = lineCrossingDetectionConfig.LineDetection.LineItemList?.LineItem ?? [];
+        if (!Array.isArray(lineCrossingRegions)) {
+            lineCrossingRegions = [lineCrossingRegions];
+        }
+
+        for (const region of lineCrossingRegions) {
+            const newConfig = configuration.regions.find((config) => config.id === Number(region.id));
+            if (!newConfig) {
+                continue;
+            }
+
+            if (newConfig.detectionTarget) {
+                region.detectionTarget = newConfig.detectionTarget.join(',');
+            }
+
+            if (typeof newConfig.sensitivityLevel === 'number') {
+                region.sensitivityLevel = newConfig.sensitivityLevel;
+            }
+
+            if (typeof newConfig.crossingDirection === 'string') {
+                region.directionSensitivity = newConfig.crossingDirection;
+            }
+
+            if (typeof newConfig.confidenceLevel === 'string') {
+                region.alarmConfidence = newConfig.confidenceLevel;
+            }
+        }
+
+        lineCrossingDetectionConfig.LineDetection.LineItemList.LineItem = lineCrossingRegions;
+
+        const res = await this.getDigestClient().fetch(
+            this.buildURL('/ISAPI/Smart/LineDetection/1'),
+            {
+                method: 'put',
+                headers: {
+                    'content-type': 'application/xml',
+                },
+                body: this.xmlBuilder.build(lineCrossingDetectionConfig),
+                signal: this.timeoutSignal
+            }
+        );
+
+        if (res.status !== 200) {
+            throw new HttpRequestError();
+        }
+
+        const updateRes = this.xmlParser.parse(await res.text());
+        if (Number(updateRes?.ResponseStatus?.statusCode) !== 1 || updateRes?.ResponseStatus?.subStatusCode !== 'ok') {
+            throw new HttpRequestError();
+        }
+
+        if (configuration.schedule) {
+            const schedule = {
+                '?xml': { '@_version': '1.0', '@_encoding': 'UTF-8' },
+                'Schedule': {
+                    'id': 'linedetection_video1',
+                    'eventType': 'linedetection',
+                    'videoInputChannelID': 1,
+                    'TimeBlockList': this.parseInvasionAreaScheduleToCamera(configuration.schedule),
+                    '@_version': '2.0',
+                    '@_xmlns': 'http://www.hikvision.com/ver20/XMLSchema'
+                }
+            };
+
+            const res = await this.getDigestClient().fetch(
+                this.buildURL('/ISAPI/Event/schedules/lineDetections/linedetection_video1'),
+                {
+                    method: 'put',
+                    headers: {
+                        'content-type': 'application/xml',
+                    },
+                    body: this.xmlBuilder.build(schedule),
+                    signal: this.timeoutSignal
+                }
+            );
+
+            if (res.status !== 200) {
+                throw new HttpRequestError();
+            }
+
+            const updateRes = this.xmlParser.parse(await res.text());
+            if (Number(updateRes?.ResponseStatus?.statusCode) !== 1 || updateRes?.ResponseStatus?.subStatusCode !== 'ok') {
+                throw new HttpRequestError();
+            }
+        }
+    }
+
+    public async setRegionEntranceConfiguration(configuration: RegionEntranceConfiguration) {
+        const regionEntranceRes = await this.getDigestClient().fetch(
+            this.buildURL('/ISAPI/Smart/regionEntrance/1'),
+            {
+                signal: this.timeoutSignal
+            }
+        );
+
+        if (regionEntranceRes.status !== 200) {
+            throw new HttpRequestError();
+        }
+
+        const regionEntranceConfig = this.xmlParser.parse(await regionEntranceRes.text());
+        regionEntranceConfig.RegionEntrance.enabled = configuration.enabled;
+
+        let regionEntranceRegions = regionEntranceConfig.RegionEntrance.RegionEntranceRegionList?.RegionEntranceRegion ?? [];
+        if (!Array.isArray(regionEntranceRegions)) {
+            regionEntranceRegions = [regionEntranceRegions];
+        }
+
+        for (const region of regionEntranceRegions) {
+            const newConfig = configuration.regions.find((config) => config.id === Number(region.id));
+            if (!newConfig) {
+                continue;
+            }
+
+            if (newConfig.detectionTarget) {
+                region.detectionTarget = newConfig.detectionTarget.join(',');
+            }
+
+            if (typeof newConfig.sensitivityLevel === 'number') {
+                region.sensitivityLevel = newConfig.sensitivityLevel;
+            }
+
+            if (typeof newConfig.confidenceLevel === 'string') {
+                region.alarmConfidence = newConfig.confidenceLevel;
+            }
+        }
+
+        regionEntranceConfig.RegionEntrance.RegionEntranceRegionList.RegionEntranceRegion = regionEntranceRegions;
+
+        const res = await this.getDigestClient().fetch(
+            this.buildURL('/ISAPI/Smart/regionEntrance/1'),
+            {
+                method: 'put',
+                headers: {
+                    'content-type': 'application/xml',
+                },
+                body: this.xmlBuilder.build(regionEntranceConfig),
+                signal: this.timeoutSignal
+            }
+        );
+
+        if (res.status !== 200) {
+            throw new HttpRequestError();
+        }
+
+        const updateRes = this.xmlParser.parse(await res.text());
+        if (Number(updateRes?.ResponseStatus?.statusCode) !== 1 || updateRes?.ResponseStatus?.subStatusCode !== 'ok') {
+            throw new HttpRequestError();
+        }
+
+        if (configuration.schedule) {
+            const schedule = {
+                '?xml': { '@_version': '1.0', '@_encoding': 'UTF-8' },
+                'Schedule': {
+                    'id': 'regionEntrance-1',
+                    'eventType': 'regionEntrance',
+                    'videoInputChannelID': 1,
+                    'TimeBlockList': this.parseInvasionAreaScheduleToCamera(configuration.schedule),
+                    '@_version': '2.0',
+                    '@_xmlns': 'http://www.hikvision.com/ver20/XMLSchema'
+                }
+            };
+
+            const res = await this.getDigestClient().fetch(
+                this.buildURL('/ISAPI/Event/schedules/regionEntrances/regionEntrance-1'),
+                {
+                    method: 'put',
+                    headers: {
+                        'content-type': 'application/xml',
+                    },
+                    body: this.xmlBuilder.build(schedule),
+                    signal: this.timeoutSignal
+                }
+            );
+
+            if (res.status !== 200) {
+                throw new HttpRequestError();
+            }
+
+            const updateRes = this.xmlParser.parse(await res.text());
+            if (Number(updateRes?.ResponseStatus?.statusCode) !== 1 || updateRes?.ResponseStatus?.subStatusCode !== 'ok') {
+                throw new HttpRequestError();
+            }
+        }
+    }
+
+    public async setRegionExitingConfiguration(configuration: RegionExitingConfiguration) {
+        const regionExitingRes = await this.getDigestClient().fetch(
+            this.buildURL('/ISAPI/Smart/regionExiting/1'),
+            {
+                signal: this.timeoutSignal
+            }
+        );
+
+        if (regionExitingRes.status !== 200) {
+            throw new HttpRequestError();
+        }
+
+        const regionExitingConfig = this.xmlParser.parse(await regionExitingRes.text());
+        regionExitingConfig.RegionExiting.enabled = configuration.enabled;
+
+        let regionExitingRegions = regionExitingConfig.RegionExiting.RegionExitingRegionList?.RegionExitingRegion ?? [];
+        if (!Array.isArray(regionExitingRegions)) {
+            regionExitingRegions = [regionExitingRegions];
+        }
+
+        for (const region of regionExitingRegions) {
+            const newConfig = configuration.regions.find((config) => config.id === Number(region.id));
+            if (!newConfig) {
+                continue;
+            }
+
+            if (newConfig.detectionTarget) {
+                region.detectionTarget = newConfig.detectionTarget.join(',');
+            }
+
+            if (typeof newConfig.sensitivityLevel === 'number') {
+                region.sensitivityLevel = newConfig.sensitivityLevel;
+            }
+
+            if (typeof newConfig.confidenceLevel === 'string') {
+                region.alarmConfidence = newConfig.confidenceLevel;
+            }
+        }
+
+        regionExitingConfig.RegionExiting.RegionExitingRegionList.RegionExitingRegion = regionExitingRegions;
+
+        const res = await this.getDigestClient().fetch(
+            this.buildURL('/ISAPI/Smart/regionExiting/1'),
+            {
+                method: 'put',
+                headers: {
+                    'content-type': 'application/xml',
+                },
+                body: this.xmlBuilder.build(regionExitingConfig),
+                signal: this.timeoutSignal
+            }
+        );
+
+        if (res.status !== 200) {
+            throw new HttpRequestError();
+        }
+
+        const updateRes = this.xmlParser.parse(await res.text());
+        if (Number(updateRes?.ResponseStatus?.statusCode) !== 1 || updateRes?.ResponseStatus?.subStatusCode !== 'ok') {
+            throw new HttpRequestError();
+        }
+
+        if (configuration.schedule) {
+            const schedule = {
+                '?xml': { '@_version': '1.0', '@_encoding': 'UTF-8' },
+                'Schedule': {
+                    'id': 'regionExiting-1',
+                    'eventType': 'regionExiting',
+                    'videoInputChannelID': 1,
+                    'TimeBlockList': this.parseInvasionAreaScheduleToCamera(configuration.schedule),
+                    '@_version': '2.0',
+                    '@_xmlns': 'http://www.hikvision.com/ver20/XMLSchema'
+                }
+            };
+
+            const res = await this.getDigestClient().fetch(
+                this.buildURL('/ISAPI/Event/schedules/regionExitings/regionExiting-1'),
+                {
+                    method: 'put',
+                    headers: {
+                        'content-type': 'application/xml',
+                    },
+                    body: this.xmlBuilder.build(schedule),
+                    signal: this.timeoutSignal
+                }
+            );
+
+            if (res.status !== 200) {
+                throw new HttpRequestError();
+            }
+
+            const updateRes = this.xmlParser.parse(await res.text());
+            if (Number(updateRes?.ResponseStatus?.statusCode) !== 1 || updateRes?.ResponseStatus?.subStatusCode !== 'ok') {
+                throw new HttpRequestError();
+            }
+        }
+    }
+
+    private parseInvasionAreaScheduleToCamera(schedule: InvasionAreaScheduleConfiguration) {
+        return {
+            'TimeBlock': [
+                {
+                    'dayOfWeek': 1,
+                    'TimeRange': { 'beginTime': schedule.monday.start, 'endTime': schedule.monday.end }
+                },
+                {
+                    'dayOfWeek': 2,
+                    'TimeRange': { 'beginTime': schedule.tuesday.start, 'endTime': schedule.tuesday.end }
+                },
+                {
+                    'dayOfWeek': 3,
+                    'TimeRange': { 'beginTime': schedule.wednesday.start, 'endTime': schedule.wednesday.end }
+                },
+                {
+                    'dayOfWeek': 4,
+                    'TimeRange': { 'beginTime': schedule.thursday.start, 'endTime': schedule.thursday.end }
+                },
+                {
+                    'dayOfWeek': 5,
+                    'TimeRange': { 'beginTime': schedule.friday.start, 'endTime': schedule.friday.end }
+                },
+                {
+                    'dayOfWeek': 6,
+                    'TimeRange': { 'beginTime': schedule.saturday.start, 'endTime': schedule.saturday.end }
+                },
+                {
+                    'dayOfWeek': 7,
+                    'TimeRange': { 'beginTime': schedule.sunday.start, 'endTime': schedule.sunday.end }
+                },
+            ],
+            '@_size': '8'
+        };
     }
 
     private async getCameraChannels() {

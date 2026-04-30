@@ -144,6 +144,37 @@ export type DeviceInformation = {
     firmwareVersion: string;
 };
 
+export type InvasionAreaScheduleConfiguration = {
+    monday: {
+        start: string; // e.g: "00:00:00"
+        end: string; // e.g: "24:00:00"
+    }
+    tuesday: {
+        start: string; // e.g: "00:00:00"
+        end: string; // e.g: "24:00:00"
+    }
+    wednesday: {
+        start: string; // e.g: "00:00:00"
+        end: string; // e.g: "24:00:00"
+    }
+    thursday: {
+        start: string; // e.g: "00:00:00"
+        end: string; // e.g: "24:00:00"
+    }
+    friday: {
+        start: string; // e.g: "00:00:00"
+        end: string; // e.g: "24:00:00"
+    }
+    saturday: {
+        start: string; // e.g: "00:00:00"
+        end: string; // e.g: "24:00:00"
+    }
+    sunday: {
+        start: string; // e.g: "00:00:00"
+        end: string; // e.g: "24:00:00"
+    }
+};
+
 export type FieldDetectionConfiguration = {
     enabled: boolean;
     regions: {
@@ -153,34 +184,40 @@ export type FieldDetectionConfiguration = {
         timeThreshold?: number; // in seconds 1-60
         confidenceLevel?: 'low' | 'mediumLow' | 'mediumHigh' | 'high';
     }[];
-    schedule?: {
-        monday: {
-            start: string; // e.g: "00:00:00"
-            end: string; // e.g: "24:00:00"
-        }
-        tuesday: {
-            start: string; // e.g: "00:00:00"
-            end: string; // e.g: "24:00:00"
-        }
-        wednesday: {
-            start: string; // e.g: "00:00:00"
-            end: string; // e.g: "24:00:00"
-        }
-        thursday: {
-            start: string; // e.g: "00:00:00"
-            end: string; // e.g: "24:00:00"
-        }
-        friday: {
-            start: string; // e.g: "00:00:00"
-            end: string; // e.g: "24:00:00"
-        }
-        saturday: {
-            start: string; // e.g: "00:00:00"
-            end: string; // e.g: "24:00:00"
-        }
-        sunday: {
-            start: string; // e.g: "00:00:00"
-            end: string; // e.g: "24:00:00"
-        }
-    };
+    schedule?: InvasionAreaScheduleConfiguration;
+};
+
+export type LineCrossingConfiguration = {
+    enabled: boolean;
+    regions: {
+        id: number;
+        sensitivityLevel?: number; // 1 to 100
+        detectionTarget?: ('human' | 'vehicle')[];
+        confidenceLevel?: 'low' | 'mediumLow' | 'mediumHigh' | 'high';
+        crossingDirection?: 'any' | 'left-right' | 'right-left';
+    }[];
+    schedule?: InvasionAreaScheduleConfiguration;
+};
+
+export type RegionEntranceConfiguration = {
+    enabled: boolean;
+    regions: {
+        id: number;
+        sensitivityLevel?: number; // 1 to 100
+        detectionTarget?: ('human' | 'vehicle')[];
+        confidenceLevel?: 'low' | 'mediumLow' | 'mediumHigh' | 'high';
+    }[];
+    schedule?: InvasionAreaScheduleConfiguration;
+};
+
+
+export type RegionExitingConfiguration = {
+    enabled: boolean;
+    regions: {
+        id: number;
+        sensitivityLevel?: number; // 1 to 100
+        detectionTarget?: ('human' | 'vehicle')[];
+        confidenceLevel?: 'low' | 'mediumLow' | 'mediumHigh' | 'high';
+    }[];
+    schedule?: InvasionAreaScheduleConfiguration;
 };
