@@ -1979,6 +1979,763 @@ describe('HikvisionDevice', () => {
         }
       });
 
+      it('updates line crossing configuration and schedule using camera payload', async () => {
+        const getPayload = `<?xml version="1.0" encoding="UTF-8"?>
+        <LineDetection>
+          <id>1</id>
+          <enabled>true</enabled>
+          <LineItemList size="2">
+            <LineItem>
+              <id>1</id>
+              <sensitivityLevel>55</sensitivityLevel>
+              <directionSensitivity>any</directionSensitivity>
+              <detectionTarget>human</detectionTarget>
+              <alarmConfidence>low</alarmConfidence>
+            </LineItem>
+            <LineItem>
+              <id>2</id>
+              <sensitivityLevel>50</sensitivityLevel>
+              <directionSensitivity>any</directionSensitivity>
+              <detectionTarget>human</detectionTarget>
+              <alarmConfidence>low</alarmConfidence>
+            </LineItem>
+          </LineItemList>
+        </LineDetection>`;
+
+        const putResponse = `<?xml version="1.0" encoding="UTF-8"?>
+        <ResponseStatus>
+          <statusCode>1</statusCode>
+          <subStatusCode>ok</subStatusCode>
+        </ResponseStatus>`;
+
+        let lineCrossingPutBody = '';
+        let schedulePutBody = '';
+
+        nock('http://hikvision.test:80')
+          .get('/ISAPI/Smart/LineDetection/1')
+          .reply(200, getPayload);
+
+        nock('http://hikvision.test:80')
+          .put('/ISAPI/Smart/LineDetection/1', (body: string) => {
+            lineCrossingPutBody = String(body);
+            return true;
+          })
+          .reply(200, putResponse);
+
+        nock('http://hikvision.test:80')
+          .put('/ISAPI/Event/schedules/lineDetections/linedetection_video1', (body: string) => {
+            schedulePutBody = String(body);
+            return true;
+          })
+          .reply(200, putResponse);
+
+        const device = new HikvisionDevice(defaultConfig);
+
+        await device.setLineCrossingConfiguration({
+          enabled: false,
+          regions: [
+            {
+              id: 1,
+              sensitivityLevel: 25,
+              detectionTarget: ['human', 'vehicle'],
+              crossingDirection: 'left-right',
+              confidenceLevel: 'mediumHigh'
+            }
+          ],
+          schedule: {
+            monday: { start: '01:00:00', end: '02:00:00' },
+            tuesday: { start: '03:00:00', end: '04:00:00' },
+            wednesday: { start: '05:00:00', end: '06:00:00' },
+            thursday: { start: '07:00:00', end: '08:00:00' },
+            friday: { start: '09:00:00', end: '10:00:00' },
+            saturday: { start: '11:00:00', end: '12:00:00' },
+            sunday: { start: '13:00:00', end: '24:00:00' },
+          }
+        });
+
+        expect(lineCrossingPutBody).to.include('<enabled>false</enabled>');
+        expect(lineCrossingPutBody).to.include('<sensitivityLevel>25</sensitivityLevel>');
+        expect(lineCrossingPutBody).to.include('<directionSensitivity>left-right</directionSensitivity>');
+        expect(lineCrossingPutBody).to.include('<detectionTarget>human,vehicle</detectionTarget>');
+        expect(lineCrossingPutBody).to.include('<alarmConfidence>mediumHigh</alarmConfidence>');
+
+        expect(schedulePutBody).to.include('<id>linedetection_video1</id>');
+        expect(schedulePutBody).to.include('<eventType>linedetection</eventType>');
+        expect(schedulePutBody).to.include('<TimeBlockList size="8">');
+        expect(schedulePutBody).to.include('<dayOfWeek>1</dayOfWeek>');
+        expect(schedulePutBody).to.include('<beginTime>01:00:00</beginTime>');
+        expect(schedulePutBody).to.include('<endTime>02:00:00</endTime>');
+      });
+
+      it('updates line crossing configuration without schedule update when schedule is not provided', async () => {
+        const getPayload = `<?xml version="1.0" encoding="UTF-8"?>
+        <LineDetection>
+          <enabled>true</enabled>
+          <LineItemList>
+            <LineItem>
+              <id>1</id>
+              <sensitivityLevel>50</sensitivityLevel>
+              <directionSensitivity>any</directionSensitivity>
+              <detectionTarget>human</detectionTarget>
+              <alarmConfidence>low</alarmConfidence>
+            </LineItem>
+          </LineItemList>
+        </LineDetection>`;
+
+        const putResponse = `<?xml version="1.0" encoding="UTF-8"?>
+        <ResponseStatus>
+          <statusCode>1</statusCode>
+          <subStatusCode>ok</subStatusCode>
+        </ResponseStatus>`;
+
+        let lineCrossingPutBody = '';
+
+        nock('http://hikvision.test:80')
+          .get('/ISAPI/Smart/LineDetection/1')
+          .reply(200, getPayload);
+
+        nock('http://hikvision.test:80')
+          .put('/ISAPI/Smart/LineDetection/1', (body: string) => {
+            lineCrossingPutBody = String(body);
+            return true;
+          })
+          .reply(200, putResponse);
+
+        const device = new HikvisionDevice(defaultConfig);
+
+        await device.setLineCrossingConfiguration({
+          enabled: true,
+          regions: [
+            {
+              id: 1,
+              crossingDirection: 'right-left',
+              confidenceLevel: 'high'
+            }
+          ]
+        });
+
+        expect(lineCrossingPutBody).to.include('<directionSensitivity>right-left</directionSensitivity>');
+        expect(lineCrossingPutBody).to.include('<alarmConfidence>high</alarmConfidence>');
+      });
+
+      it('throws HttpRequestError when line crossing configuration get request fails', async () => {
+        nock('http://hikvision.test:80')
+          .get('/ISAPI/Smart/LineDetection/1')
+          .reply(500, 'error');
+
+        const device = new HikvisionDevice(defaultConfig);
+
+        try {
+          await device.setLineCrossingConfiguration({
+            enabled: true,
+            regions: []
+          });
+          expect.fail('Function should have thrown');
+        } catch (error) {
+          expect(error).to.be.instanceOf(HttpRequestError);
+        }
+      });
+
+      it('throws HttpRequestError when line crossing configuration update response is invalid', async () => {
+        const getPayload = `<?xml version="1.0" encoding="UTF-8"?>
+        <LineDetection>
+          <enabled>true</enabled>
+          <LineItemList>
+            <LineItem>
+              <id>1</id>
+            </LineItem>
+          </LineItemList>
+        </LineDetection>`;
+
+        const invalidPutResponse = `<?xml version="1.0" encoding="UTF-8"?>
+        <ResponseStatus>
+          <statusCode>2</statusCode>
+          <subStatusCode>error</subStatusCode>
+        </ResponseStatus>`;
+
+        nock('http://hikvision.test:80')
+          .get('/ISAPI/Smart/LineDetection/1')
+          .reply(200, getPayload);
+
+        nock('http://hikvision.test:80')
+          .put('/ISAPI/Smart/LineDetection/1')
+          .reply(200, invalidPutResponse);
+
+        const device = new HikvisionDevice(defaultConfig);
+
+        try {
+          await device.setLineCrossingConfiguration({
+            enabled: false,
+            regions: [
+              {
+                id: 1,
+                sensitivityLevel: 10
+              }
+            ]
+          });
+          expect.fail('Function should have thrown');
+        } catch (error) {
+          expect(error).to.be.instanceOf(HttpRequestError);
+        }
+      });
+
+      it('throws HttpRequestError when line crossing schedule update response is invalid', async () => {
+        const getPayload = `<?xml version="1.0" encoding="UTF-8"?>
+        <LineDetection>
+          <enabled>true</enabled>
+          <LineItemList>
+            <LineItem>
+              <id>1</id>
+            </LineItem>
+          </LineItemList>
+        </LineDetection>`;
+
+        const okPutResponse = `<?xml version="1.0" encoding="UTF-8"?>
+        <ResponseStatus>
+          <statusCode>1</statusCode>
+          <subStatusCode>ok</subStatusCode>
+        </ResponseStatus>`;
+
+        const invalidPutResponse = `<?xml version="1.0" encoding="UTF-8"?>
+        <ResponseStatus>
+          <statusCode>2</statusCode>
+          <subStatusCode>error</subStatusCode>
+        </ResponseStatus>`;
+
+        nock('http://hikvision.test:80')
+          .get('/ISAPI/Smart/LineDetection/1')
+          .reply(200, getPayload);
+
+        nock('http://hikvision.test:80')
+          .put('/ISAPI/Smart/LineDetection/1')
+          .reply(200, okPutResponse);
+
+        nock('http://hikvision.test:80')
+          .put('/ISAPI/Event/schedules/lineDetections/linedetection_video1')
+          .reply(200, invalidPutResponse);
+
+        const device = new HikvisionDevice(defaultConfig);
+
+        try {
+          await device.setLineCrossingConfiguration({
+            enabled: true,
+            regions: [],
+            schedule: {
+              monday: { start: '00:00:00', end: '24:00:00' },
+              tuesday: { start: '00:00:00', end: '24:00:00' },
+              wednesday: { start: '00:00:00', end: '24:00:00' },
+              thursday: { start: '00:00:00', end: '24:00:00' },
+              friday: { start: '00:00:00', end: '24:00:00' },
+              saturday: { start: '00:00:00', end: '24:00:00' },
+              sunday: { start: '00:00:00', end: '24:00:00' },
+            }
+          });
+          expect.fail('Function should have thrown');
+        } catch (error) {
+          expect(error).to.be.instanceOf(HttpRequestError);
+        }
+      });
+
+      it('updates region entrance configuration and schedule using camera payload', async () => {
+        const getPayload = `<?xml version="1.0" encoding="UTF-8"?>
+        <RegionEntrance>
+          <id>1</id>
+          <enabled>true</enabled>
+          <RegionEntranceRegionList size="2">
+            <RegionEntranceRegion>
+              <id>1</id>
+              <sensitivityLevel>55</sensitivityLevel>
+              <detectionTarget>human</detectionTarget>
+              <alarmConfidence>low</alarmConfidence>
+            </RegionEntranceRegion>
+            <RegionEntranceRegion>
+              <id>2</id>
+              <sensitivityLevel>50</sensitivityLevel>
+              <detectionTarget>human</detectionTarget>
+              <alarmConfidence>low</alarmConfidence>
+            </RegionEntranceRegion>
+          </RegionEntranceRegionList>
+        </RegionEntrance>`;
+
+        const putResponse = `<?xml version="1.0" encoding="UTF-8"?>
+        <ResponseStatus>
+          <statusCode>1</statusCode>
+          <subStatusCode>ok</subStatusCode>
+        </ResponseStatus>`;
+
+        let regionEntrancePutBody = '';
+        let schedulePutBody = '';
+
+        nock('http://hikvision.test:80')
+          .get('/ISAPI/Smart/regionEntrance/1')
+          .reply(200, getPayload);
+
+        nock('http://hikvision.test:80')
+          .put('/ISAPI/Smart/regionEntrance/1', (body: string) => {
+            regionEntrancePutBody = String(body);
+            return true;
+          })
+          .reply(200, putResponse);
+
+        nock('http://hikvision.test:80')
+          .put('/ISAPI/Event/schedules/regionEntrances/regionEntrance-1', (body: string) => {
+            schedulePutBody = String(body);
+            return true;
+          })
+          .reply(200, putResponse);
+
+        const device = new HikvisionDevice(defaultConfig);
+
+        await device.setRegionEntranceConfiguration({
+          enabled: false,
+          regions: [
+            {
+              id: 1,
+              sensitivityLevel: 20,
+              detectionTarget: ['human', 'vehicle'],
+              confidenceLevel: 'mediumHigh'
+            }
+          ],
+          schedule: {
+            monday: { start: '01:00:00', end: '02:00:00' },
+            tuesday: { start: '03:00:00', end: '04:00:00' },
+            wednesday: { start: '05:00:00', end: '06:00:00' },
+            thursday: { start: '07:00:00', end: '08:00:00' },
+            friday: { start: '09:00:00', end: '10:00:00' },
+            saturday: { start: '11:00:00', end: '12:00:00' },
+            sunday: { start: '13:00:00', end: '24:00:00' },
+          }
+        });
+
+        expect(regionEntrancePutBody).to.include('<enabled>false</enabled>');
+        expect(regionEntrancePutBody).to.include('<sensitivityLevel>20</sensitivityLevel>');
+        expect(regionEntrancePutBody).to.include('<detectionTarget>human,vehicle</detectionTarget>');
+        expect(regionEntrancePutBody).to.include('<alarmConfidence>mediumHigh</alarmConfidence>');
+
+        expect(schedulePutBody).to.include('<id>regionEntrance-1</id>');
+        expect(schedulePutBody).to.include('<eventType>regionEntrance</eventType>');
+        expect(schedulePutBody).to.include('<TimeBlockList size="8">');
+        expect(schedulePutBody).to.include('<beginTime>01:00:00</beginTime>');
+      });
+
+      it('updates region entrance configuration without schedule update when schedule is not provided', async () => {
+        const getPayload = `<?xml version="1.0" encoding="UTF-8"?>
+        <RegionEntrance>
+          <enabled>true</enabled>
+          <RegionEntranceRegionList>
+            <RegionEntranceRegion>
+              <id>1</id>
+              <sensitivityLevel>50</sensitivityLevel>
+              <detectionTarget>human</detectionTarget>
+              <alarmConfidence>low</alarmConfidence>
+            </RegionEntranceRegion>
+          </RegionEntranceRegionList>
+        </RegionEntrance>`;
+
+        const putResponse = `<?xml version="1.0" encoding="UTF-8"?>
+        <ResponseStatus>
+          <statusCode>1</statusCode>
+          <subStatusCode>ok</subStatusCode>
+        </ResponseStatus>`;
+
+        let regionEntrancePutBody = '';
+
+        nock('http://hikvision.test:80')
+          .get('/ISAPI/Smart/regionEntrance/1')
+          .reply(200, getPayload);
+
+        nock('http://hikvision.test:80')
+          .put('/ISAPI/Smart/regionEntrance/1', (body: string) => {
+            regionEntrancePutBody = String(body);
+            return true;
+          })
+          .reply(200, putResponse);
+
+        const device = new HikvisionDevice(defaultConfig);
+
+        await device.setRegionEntranceConfiguration({
+          enabled: true,
+          regions: [
+            {
+              id: 1,
+              sensitivityLevel: 70,
+              confidenceLevel: 'high'
+            }
+          ]
+        });
+
+        expect(regionEntrancePutBody).to.include('<sensitivityLevel>70</sensitivityLevel>');
+        expect(regionEntrancePutBody).to.include('<alarmConfidence>high</alarmConfidence>');
+      });
+
+      it('throws HttpRequestError when region entrance configuration get request fails', async () => {
+        nock('http://hikvision.test:80')
+          .get('/ISAPI/Smart/regionEntrance/1')
+          .reply(500, 'error');
+
+        const device = new HikvisionDevice(defaultConfig);
+
+        try {
+          await device.setRegionEntranceConfiguration({
+            enabled: true,
+            regions: []
+          });
+          expect.fail('Function should have thrown');
+        } catch (error) {
+          expect(error).to.be.instanceOf(HttpRequestError);
+        }
+      });
+
+      it('throws HttpRequestError when region entrance configuration update response is invalid', async () => {
+        const getPayload = `<?xml version="1.0" encoding="UTF-8"?>
+        <RegionEntrance>
+          <enabled>true</enabled>
+          <RegionEntranceRegionList>
+            <RegionEntranceRegion>
+              <id>1</id>
+            </RegionEntranceRegion>
+          </RegionEntranceRegionList>
+        </RegionEntrance>`;
+
+        const invalidPutResponse = `<?xml version="1.0" encoding="UTF-8"?>
+        <ResponseStatus>
+          <statusCode>2</statusCode>
+          <subStatusCode>error</subStatusCode>
+        </ResponseStatus>`;
+
+        nock('http://hikvision.test:80')
+          .get('/ISAPI/Smart/regionEntrance/1')
+          .reply(200, getPayload);
+
+        nock('http://hikvision.test:80')
+          .put('/ISAPI/Smart/regionEntrance/1')
+          .reply(200, invalidPutResponse);
+
+        const device = new HikvisionDevice(defaultConfig);
+
+        try {
+          await device.setRegionEntranceConfiguration({
+            enabled: false,
+            regions: [
+              {
+                id: 1,
+                sensitivityLevel: 10
+              }
+            ]
+          });
+          expect.fail('Function should have thrown');
+        } catch (error) {
+          expect(error).to.be.instanceOf(HttpRequestError);
+        }
+      });
+
+      it('throws HttpRequestError when region entrance schedule update response is invalid', async () => {
+        const getPayload = `<?xml version="1.0" encoding="UTF-8"?>
+        <RegionEntrance>
+          <enabled>true</enabled>
+          <RegionEntranceRegionList>
+            <RegionEntranceRegion>
+              <id>1</id>
+            </RegionEntranceRegion>
+          </RegionEntranceRegionList>
+        </RegionEntrance>`;
+
+        const okPutResponse = `<?xml version="1.0" encoding="UTF-8"?>
+        <ResponseStatus>
+          <statusCode>1</statusCode>
+          <subStatusCode>ok</subStatusCode>
+        </ResponseStatus>`;
+
+        const invalidPutResponse = `<?xml version="1.0" encoding="UTF-8"?>
+        <ResponseStatus>
+          <statusCode>2</statusCode>
+          <subStatusCode>error</subStatusCode>
+        </ResponseStatus>`;
+
+        nock('http://hikvision.test:80')
+          .get('/ISAPI/Smart/regionEntrance/1')
+          .reply(200, getPayload);
+
+        nock('http://hikvision.test:80')
+          .put('/ISAPI/Smart/regionEntrance/1')
+          .reply(200, okPutResponse);
+
+        nock('http://hikvision.test:80')
+          .put('/ISAPI/Event/schedules/regionEntrances/regionEntrance-1')
+          .reply(200, invalidPutResponse);
+
+        const device = new HikvisionDevice(defaultConfig);
+
+        try {
+          await device.setRegionEntranceConfiguration({
+            enabled: true,
+            regions: [],
+            schedule: {
+              monday: { start: '00:00:00', end: '24:00:00' },
+              tuesday: { start: '00:00:00', end: '24:00:00' },
+              wednesday: { start: '00:00:00', end: '24:00:00' },
+              thursday: { start: '00:00:00', end: '24:00:00' },
+              friday: { start: '00:00:00', end: '24:00:00' },
+              saturday: { start: '00:00:00', end: '24:00:00' },
+              sunday: { start: '00:00:00', end: '24:00:00' },
+            }
+          });
+          expect.fail('Function should have thrown');
+        } catch (error) {
+          expect(error).to.be.instanceOf(HttpRequestError);
+        }
+      });
+
+      it('updates region exiting configuration and schedule using camera payload', async () => {
+        const getPayload = `<?xml version="1.0" encoding="UTF-8"?>
+        <RegionExiting>
+          <id>1</id>
+          <enabled>true</enabled>
+          <RegionExitingRegionList size="2">
+            <RegionExitingRegion>
+              <id>1</id>
+              <sensitivityLevel>55</sensitivityLevel>
+              <detectionTarget>human</detectionTarget>
+              <alarmConfidence>low</alarmConfidence>
+            </RegionExitingRegion>
+            <RegionExitingRegion>
+              <id>2</id>
+              <sensitivityLevel>50</sensitivityLevel>
+              <detectionTarget>human</detectionTarget>
+              <alarmConfidence>low</alarmConfidence>
+            </RegionExitingRegion>
+          </RegionExitingRegionList>
+        </RegionExiting>`;
+
+        const putResponse = `<?xml version="1.0" encoding="UTF-8"?>
+        <ResponseStatus>
+          <statusCode>1</statusCode>
+          <subStatusCode>ok</subStatusCode>
+        </ResponseStatus>`;
+
+        let regionExitingPutBody = '';
+        let schedulePutBody = '';
+
+        nock('http://hikvision.test:80')
+          .get('/ISAPI/Smart/regionExiting/1')
+          .reply(200, getPayload);
+
+        nock('http://hikvision.test:80')
+          .put('/ISAPI/Smart/regionExiting/1', (body: string) => {
+            regionExitingPutBody = String(body);
+            return true;
+          })
+          .reply(200, putResponse);
+
+        nock('http://hikvision.test:80')
+          .put('/ISAPI/Event/schedules/regionExitings/regionExiting-1', (body: string) => {
+            schedulePutBody = String(body);
+            return true;
+          })
+          .reply(200, putResponse);
+
+        const device = new HikvisionDevice(defaultConfig);
+
+        await device.setRegionExitingConfiguration({
+          enabled: false,
+          regions: [
+            {
+              id: 1,
+              sensitivityLevel: 20,
+              detectionTarget: ['human', 'vehicle'],
+              confidenceLevel: 'mediumHigh'
+            }
+          ],
+          schedule: {
+            monday: { start: '01:00:00', end: '02:00:00' },
+            tuesday: { start: '03:00:00', end: '04:00:00' },
+            wednesday: { start: '05:00:00', end: '06:00:00' },
+            thursday: { start: '07:00:00', end: '08:00:00' },
+            friday: { start: '09:00:00', end: '10:00:00' },
+            saturday: { start: '11:00:00', end: '12:00:00' },
+            sunday: { start: '13:00:00', end: '24:00:00' },
+          }
+        });
+
+        expect(regionExitingPutBody).to.include('<enabled>false</enabled>');
+        expect(regionExitingPutBody).to.include('<sensitivityLevel>20</sensitivityLevel>');
+        expect(regionExitingPutBody).to.include('<detectionTarget>human,vehicle</detectionTarget>');
+        expect(regionExitingPutBody).to.include('<alarmConfidence>mediumHigh</alarmConfidence>');
+
+        expect(schedulePutBody).to.include('<id>regionExiting-1</id>');
+        expect(schedulePutBody).to.include('<eventType>regionExiting</eventType>');
+        expect(schedulePutBody).to.include('<TimeBlockList size="8">');
+        expect(schedulePutBody).to.include('<beginTime>01:00:00</beginTime>');
+      });
+
+      it('updates region exiting configuration without schedule update when schedule is not provided', async () => {
+        const getPayload = `<?xml version="1.0" encoding="UTF-8"?>
+        <RegionExiting>
+          <enabled>true</enabled>
+          <RegionExitingRegionList>
+            <RegionExitingRegion>
+              <id>1</id>
+              <sensitivityLevel>50</sensitivityLevel>
+              <detectionTarget>human</detectionTarget>
+              <alarmConfidence>low</alarmConfidence>
+            </RegionExitingRegion>
+          </RegionExitingRegionList>
+        </RegionExiting>`;
+
+        const putResponse = `<?xml version="1.0" encoding="UTF-8"?>
+        <ResponseStatus>
+          <statusCode>1</statusCode>
+          <subStatusCode>ok</subStatusCode>
+        </ResponseStatus>`;
+
+        let regionExitingPutBody = '';
+
+        nock('http://hikvision.test:80')
+          .get('/ISAPI/Smart/regionExiting/1')
+          .reply(200, getPayload);
+
+        nock('http://hikvision.test:80')
+          .put('/ISAPI/Smart/regionExiting/1', (body: string) => {
+            regionExitingPutBody = String(body);
+            return true;
+          })
+          .reply(200, putResponse);
+
+        const device = new HikvisionDevice(defaultConfig);
+
+        await device.setRegionExitingConfiguration({
+          enabled: true,
+          regions: [
+            {
+              id: 1,
+              sensitivityLevel: 70,
+              confidenceLevel: 'high'
+            }
+          ]
+        });
+
+        expect(regionExitingPutBody).to.include('<sensitivityLevel>70</sensitivityLevel>');
+        expect(regionExitingPutBody).to.include('<alarmConfidence>high</alarmConfidence>');
+      });
+
+      it('throws HttpRequestError when region exiting configuration get request fails', async () => {
+        nock('http://hikvision.test:80')
+          .get('/ISAPI/Smart/regionExiting/1')
+          .reply(500, 'error');
+
+        const device = new HikvisionDevice(defaultConfig);
+
+        try {
+          await device.setRegionExitingConfiguration({
+            enabled: true,
+            regions: []
+          });
+          expect.fail('Function should have thrown');
+        } catch (error) {
+          expect(error).to.be.instanceOf(HttpRequestError);
+        }
+      });
+
+      it('throws HttpRequestError when region exiting configuration update response is invalid', async () => {
+        const getPayload = `<?xml version="1.0" encoding="UTF-8"?>
+        <RegionExiting>
+          <enabled>true</enabled>
+          <RegionExitingRegionList>
+            <RegionExitingRegion>
+              <id>1</id>
+            </RegionExitingRegion>
+          </RegionExitingRegionList>
+        </RegionExiting>`;
+
+        const invalidPutResponse = `<?xml version="1.0" encoding="UTF-8"?>
+        <ResponseStatus>
+          <statusCode>2</statusCode>
+          <subStatusCode>error</subStatusCode>
+        </ResponseStatus>`;
+
+        nock('http://hikvision.test:80')
+          .get('/ISAPI/Smart/regionExiting/1')
+          .reply(200, getPayload);
+
+        nock('http://hikvision.test:80')
+          .put('/ISAPI/Smart/regionExiting/1')
+          .reply(200, invalidPutResponse);
+
+        const device = new HikvisionDevice(defaultConfig);
+
+        try {
+          await device.setRegionExitingConfiguration({
+            enabled: false,
+            regions: [
+              {
+                id: 1,
+                sensitivityLevel: 10
+              }
+            ]
+          });
+          expect.fail('Function should have thrown');
+        } catch (error) {
+          expect(error).to.be.instanceOf(HttpRequestError);
+        }
+      });
+
+      it('throws HttpRequestError when region exiting schedule update response is invalid', async () => {
+        const getPayload = `<?xml version="1.0" encoding="UTF-8"?>
+        <RegionExiting>
+          <enabled>true</enabled>
+          <RegionExitingRegionList>
+            <RegionExitingRegion>
+              <id>1</id>
+            </RegionExitingRegion>
+          </RegionExitingRegionList>
+        </RegionExiting>`;
+
+        const okPutResponse = `<?xml version="1.0" encoding="UTF-8"?>
+        <ResponseStatus>
+          <statusCode>1</statusCode>
+          <subStatusCode>ok</subStatusCode>
+        </ResponseStatus>`;
+
+        const invalidPutResponse = `<?xml version="1.0" encoding="UTF-8"?>
+        <ResponseStatus>
+          <statusCode>2</statusCode>
+          <subStatusCode>error</subStatusCode>
+        </ResponseStatus>`;
+
+        nock('http://hikvision.test:80')
+          .get('/ISAPI/Smart/regionExiting/1')
+          .reply(200, getPayload);
+
+        nock('http://hikvision.test:80')
+          .put('/ISAPI/Smart/regionExiting/1')
+          .reply(200, okPutResponse);
+
+        nock('http://hikvision.test:80')
+          .put('/ISAPI/Event/schedules/regionExitings/regionExiting-1')
+          .reply(200, invalidPutResponse);
+
+        const device = new HikvisionDevice(defaultConfig);
+
+        try {
+          await device.setRegionExitingConfiguration({
+            enabled: true,
+            regions: [],
+            schedule: {
+              monday: { start: '00:00:00', end: '24:00:00' },
+              tuesday: { start: '00:00:00', end: '24:00:00' },
+              wednesday: { start: '00:00:00', end: '24:00:00' },
+              thursday: { start: '00:00:00', end: '24:00:00' },
+              friday: { start: '00:00:00', end: '24:00:00' },
+              saturday: { start: '00:00:00', end: '24:00:00' },
+              sunday: { start: '00:00:00', end: '24:00:00' },
+            }
+          });
+          expect.fail('Function should have thrown');
+        } catch (error) {
+          expect(error).to.be.instanceOf(HttpRequestError);
+        }
+      });
+
       it('reboots camera when response is ok', async () => {
         const rebootPayload = `<?xml version="1.0" encoding="UTF-8"?>
         <ResponseStatus>
