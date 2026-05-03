@@ -3,7 +3,7 @@ import moment from 'moment-timezone';
 import { HttpRequestError, MissingConfigurationError, NotImplementedError } from '../../errors.js';
 import { InvasionAreaCoordinate } from '../../types.js';
 import { BaseDevice } from '../base.js';
-import { DddnsConfiguration, ImageQualityConfiguration, InvasionAreaPoint, OverlayConfiguration, TimeConfiguration } from './types.js';
+import { DddnsConfiguration, DefocusConfiguration, ImageQualityConfiguration, InvasionAreaPoint, OverlayConfiguration, SceneChangeConfiguration, TimeConfiguration, VideoTamperingConfiguration } from './types.js';
 import { timezones } from './constants.js';
 
 export class DahuaDevice extends BaseDevice {
@@ -414,6 +414,188 @@ export class DahuaDevice extends BaseDevice {
                 ['DDNS[0].Password', configuration.password],
             ]
         ), { encodeSpaces: true });
+    }
+
+    public async setDefocusConfiguration(defocusConfiguration: DefocusConfiguration) {
+        const defocusConfig = await this.getConfig('UnFocusDetect');
+        const defocusConfigQueryParams = new URLSearchParams();
+
+        if (!this.stringIncludesWithLineBreak(defocusConfig, `UnFocusDetect[0].Enable=${defocusConfiguration.enabled}`)) {
+            defocusConfigQueryParams.append('UnFocusDetect[0].Enable', defocusConfiguration.enabled.toString());
+        }
+
+        // 1 to 100, where 1 is the lowest sensitivity and 100 is the highest sensitivity.
+        if (!this.stringIncludesWithLineBreak(defocusConfig, `UnFocusDetect[0].Sensitivity=${defocusConfiguration.sensitivityLevel}`)) {
+            defocusConfigQueryParams.append('UnFocusDetect[0].Sensitivity', defocusConfiguration.sensitivityLevel.toString());
+        }
+
+        if (!this.stringIncludesWithLineBreak(defocusConfig, `UnFocusDetect[0].EventHandler.Dejitter=${defocusConfiguration.dejitterTime}`)) {
+            defocusConfigQueryParams.append('UnFocusDetect[0].EventHandler.Dejitter', defocusConfiguration.dejitterTime.toString());
+        }
+
+        if (!this.stringIncludesWithLineBreak(defocusConfig, `UnFocusDetect[0].EventHandler.Delay=${defocusConfiguration.delayTime}`)) {
+            defocusConfigQueryParams.append('UnFocusDetect[0].EventHandler.Delay', defocusConfiguration.delayTime.toString());
+        }
+
+        if (!this.stringIncludesWithLineBreak(defocusConfig, `UnFocusDetect[0].EventHandler.SnapshotEnable=${defocusConfiguration.snapshotEnabled}`)) {
+            defocusConfigQueryParams.append('UnFocusDetect[0].EventHandler.SnapshotEnable', defocusConfiguration.snapshotEnabled.toString());
+        }
+
+        if (!this.stringIncludesWithLineBreak(defocusConfig, `UnFocusDetect[0].EventHandler.Snapshot=${defocusConfiguration.snapshotEnabled ? 1 : 0}`)) {
+            defocusConfigQueryParams.append('UnFocusDetect[0].EventHandler.Snapshot', (defocusConfiguration.snapshotEnabled ? 1 : 0).toString());
+        }
+
+        if (!this.stringIncludesWithLineBreak(defocusConfig, `UnFocusDetect[0].EventHandler.RecordEnable=${defocusConfiguration.recordEnabled}`)) {
+            defocusConfigQueryParams.append('UnFocusDetect[0].EventHandler.RecordEnable', defocusConfiguration.recordEnabled.toString());
+        }
+
+        if (!this.stringIncludesWithLineBreak(defocusConfig, `UnFocusDetect[0].EventHandler.Record=${defocusConfiguration.recordEnabled ? 1 : 0}`)) {
+            defocusConfigQueryParams.append('UnFocusDetect[0].EventHandler.Record', (defocusConfiguration.recordEnabled ? 1 : 0).toString());
+        }
+
+        if (!this.stringIncludesWithLineBreak(defocusConfig, `UnFocusDetect[0].EventHandler.RecordLatch=${defocusConfiguration.recordDelayTime}`)) {
+            defocusConfigQueryParams.append('UnFocusDetect[0].EventHandler.RecordLatch', defocusConfiguration.recordDelayTime.toString());
+        }
+
+        if (!this.stringIncludesWithLineBreak(defocusConfig, `UnFocusDetect[0].EventHandler.AlarmOutEnable=${defocusConfiguration.alarmEnabled}`)) {
+            defocusConfigQueryParams.append('UnFocusDetect[0].EventHandler.AlarmOutEnable', defocusConfiguration.alarmEnabled.toString());
+        }
+
+        if (!this.stringIncludesWithLineBreak(defocusConfig, `UnFocusDetect[0].EventHandler.AlarmOut=${defocusConfiguration.alarmEnabled ? 1 : 0}`)) {
+            defocusConfigQueryParams.append('UnFocusDetect[0].EventHandler.AlarmOut', (defocusConfiguration.alarmEnabled ? 1 : 0).toString());
+        }
+
+        if (!this.stringIncludesWithLineBreak(defocusConfig, `UnFocusDetect[0].EventHandler.AlarmOutLatch=${defocusConfiguration.alarmDelayTime}`)) {
+            defocusConfigQueryParams.append('UnFocusDetect[0].EventHandler.AlarmOutLatch', defocusConfiguration.alarmDelayTime.toString());
+        }
+
+        if (defocusConfigQueryParams.size > 0) {
+            await this.setConfigs(defocusConfigQueryParams);
+        }
+    }
+
+    public async setVideoTamperingConfiguration(videoTamperingConfiguration: VideoTamperingConfiguration) {
+        const videoTamperingConfig = await this.getConfig('BlindDetect');
+        const videoTamperingConfigQueryParams = new URLSearchParams();
+
+        if (!this.stringIncludesWithLineBreak(videoTamperingConfig, `BlindDetect[0].Enable=${videoTamperingConfiguration.enabled}`)) {
+            videoTamperingConfigQueryParams.append('BlindDetect[0].Enable', videoTamperingConfiguration.enabled.toString());
+        }
+
+        if (!this.stringIncludesWithLineBreak(videoTamperingConfig, `BlindDetect[0].Duration=${videoTamperingConfiguration.duration}`)) {
+            videoTamperingConfigQueryParams.append('BlindDetect[0].Duration', videoTamperingConfiguration.duration.toString());
+        }
+
+        if (!this.stringIncludesWithLineBreak(videoTamperingConfig, `BlindDetect[0].Percent=${videoTamperingConfiguration.percentage}`)) {
+            videoTamperingConfigQueryParams.append('BlindDetect[0].Percent', videoTamperingConfiguration.percentage.toString());
+        }
+
+        // Sensitivity of blind detection. 1: lowest sensitivity. 6: highest sensitivity.
+        if (!this.stringIncludesWithLineBreak(videoTamperingConfig, `BlindDetect[0].Level=${videoTamperingConfiguration.sensitivityLevel}`)) {
+            videoTamperingConfigQueryParams.append('BlindDetect[0].Level', videoTamperingConfiguration.sensitivityLevel.toString());
+        }
+
+        if (!this.stringIncludesWithLineBreak(videoTamperingConfig, `BlindDetect[0].EventHandler.Dejitter=${videoTamperingConfiguration.dejitterTime}`)) {
+            videoTamperingConfigQueryParams.append('BlindDetect[0].EventHandler.Dejitter', videoTamperingConfiguration.dejitterTime.toString());
+        }
+
+        if (!this.stringIncludesWithLineBreak(videoTamperingConfig, `BlindDetect[0].EventHandler.Delay=${videoTamperingConfiguration.delayTime}`)) {
+            videoTamperingConfigQueryParams.append('BlindDetect[0].EventHandler.Delay', videoTamperingConfiguration.delayTime.toString());
+        }
+
+        if (!this.stringIncludesWithLineBreak(videoTamperingConfig, `BlindDetect[0].EventHandler.SnapshotEnable=${videoTamperingConfiguration.snapshotEnabled}`)) {
+            videoTamperingConfigQueryParams.append('BlindDetect[0].EventHandler.SnapshotEnable', videoTamperingConfiguration.snapshotEnabled.toString());
+        }
+
+        if (!this.stringIncludesWithLineBreak(videoTamperingConfig, `BlindDetect[0].EventHandler.Snapshot=${videoTamperingConfiguration.snapshotEnabled ? 1 : 0}`)) {
+            videoTamperingConfigQueryParams.append('BlindDetect[0].EventHandler.Snapshot', (videoTamperingConfiguration.snapshotEnabled ? 1 : 0).toString());
+        }
+
+        if (!this.stringIncludesWithLineBreak(videoTamperingConfig, `BlindDetect[0].EventHandler.RecordEnable=${videoTamperingConfiguration.recordEnabled}`)) {
+            videoTamperingConfigQueryParams.append('BlindDetect[0].EventHandler.RecordEnable', videoTamperingConfiguration.recordEnabled.toString());
+        }
+
+        if (!this.stringIncludesWithLineBreak(videoTamperingConfig, `BlindDetect[0].EventHandler.Record=${videoTamperingConfiguration.recordEnabled ? 1 : 0}`)) {
+            videoTamperingConfigQueryParams.append('BlindDetect[0].EventHandler.Record', (videoTamperingConfiguration.recordEnabled ? 1 : 0).toString());
+        }
+
+        if (!this.stringIncludesWithLineBreak(videoTamperingConfig, `BlindDetect[0].EventHandler.RecordLatch=${videoTamperingConfiguration.recordDelayTime}`)) {
+            videoTamperingConfigQueryParams.append('BlindDetect[0].EventHandler.RecordLatch', videoTamperingConfiguration.recordDelayTime.toString());
+        }
+
+        if (!this.stringIncludesWithLineBreak(videoTamperingConfig, `BlindDetect[0].EventHandler.AlarmOutEnable=${videoTamperingConfiguration.alarmEnabled}`)) {
+            videoTamperingConfigQueryParams.append('BlindDetect[0].EventHandler.AlarmOutEnable', videoTamperingConfiguration.alarmEnabled.toString());
+        }
+
+        if (!this.stringIncludesWithLineBreak(videoTamperingConfig, `BlindDetect[0].EventHandler.AlarmOut=${videoTamperingConfiguration.alarmEnabled ? 1 : 0}`)) {
+            videoTamperingConfigQueryParams.append('BlindDetect[0].EventHandler.AlarmOut', (videoTamperingConfiguration.alarmEnabled ? 1 : 0).toString());
+        }
+
+        if (!this.stringIncludesWithLineBreak(videoTamperingConfig, `BlindDetect[0].EventHandler.AlarmOutLatch=${videoTamperingConfiguration.alarmDelayTime}`)) {
+            videoTamperingConfigQueryParams.append('BlindDetect[0].EventHandler.AlarmOutLatch', videoTamperingConfiguration.alarmDelayTime.toString());
+        }
+
+        if (videoTamperingConfigQueryParams.size > 0) {
+            await this.setConfigs(videoTamperingConfigQueryParams);
+        }
+    }
+
+    public async setSceneChangeConfiguration(videoTamperingConfiguration: SceneChangeConfiguration) {
+        const sceneChangeConfig = await this.getConfig('MovedDetect');
+        const sceneChangeConfigQueryParams = new URLSearchParams();
+
+        if (!this.stringIncludesWithLineBreak(sceneChangeConfig, `MovedDetect[0].Enable=${videoTamperingConfiguration.enabled}`)) {
+            sceneChangeConfigQueryParams.append('MovedDetect[0].Enable', videoTamperingConfiguration.enabled.toString());
+        }
+
+        // 1 to 5, where 1 is the lowest sensitivity and 5 is the highest sensitivity.
+        if (!this.stringIncludesWithLineBreak(sceneChangeConfig, `MovedDetect[0].Sensitivity=${videoTamperingConfiguration.sensitivityLevel}`)) {
+            sceneChangeConfigQueryParams.append('MovedDetect[0].Sensitivity', videoTamperingConfiguration.sensitivityLevel.toString());
+        }
+
+        if (!this.stringIncludesWithLineBreak(sceneChangeConfig, `MovedDetect[0].EventHandler.Delay=${videoTamperingConfiguration.delayTime}`)) {
+            sceneChangeConfigQueryParams.append('MovedDetect[0].EventHandler.Delay', videoTamperingConfiguration.delayTime.toString());
+        }
+
+        if (!this.stringIncludesWithLineBreak(sceneChangeConfig, `MovedDetect[0].EventHandler.Dejitter=${videoTamperingConfiguration.dejitterTime}`)) {
+            sceneChangeConfigQueryParams.append('MovedDetect[0].EventHandler.Dejitter', videoTamperingConfiguration.dejitterTime.toString());
+        }
+
+        if (!this.stringIncludesWithLineBreak(sceneChangeConfig, `MovedDetect[0].EventHandler.SnapshotEnable=${videoTamperingConfiguration.snapshotEnabled}`)) {
+            sceneChangeConfigQueryParams.append('MovedDetect[0].EventHandler.SnapshotEnable', videoTamperingConfiguration.snapshotEnabled.toString());
+        }
+
+        if (!this.stringIncludesWithLineBreak(sceneChangeConfig, `MovedDetect[0].EventHandler.Snapshot=${videoTamperingConfiguration.snapshotEnabled ? 1 : 0}`)) {
+            sceneChangeConfigQueryParams.append('MovedDetect[0].EventHandler.Snapshot', (videoTamperingConfiguration.snapshotEnabled ? 1 : 0).toString());
+        }
+
+        if (!this.stringIncludesWithLineBreak(sceneChangeConfig, `MovedDetect[0].EventHandler.RecordEnable=${videoTamperingConfiguration.recordEnabled}`)) {
+            sceneChangeConfigQueryParams.append('MovedDetect[0].EventHandler.RecordEnable', videoTamperingConfiguration.recordEnabled.toString());
+        }
+
+        if (!this.stringIncludesWithLineBreak(sceneChangeConfig, `MovedDetect[0].EventHandler.Record=${videoTamperingConfiguration.recordEnabled ? 1 : 0}`)) {
+            sceneChangeConfigQueryParams.append('MovedDetect[0].EventHandler.Record', (videoTamperingConfiguration.recordEnabled ? 1 : 0).toString());
+        }
+
+        if (!this.stringIncludesWithLineBreak(sceneChangeConfig, `MovedDetect[0].EventHandler.RecordLatch=${videoTamperingConfiguration.recordDelayTime}`)) {
+            sceneChangeConfigQueryParams.append('MovedDetect[0].EventHandler.RecordLatch', videoTamperingConfiguration.recordDelayTime.toString());
+        }
+
+        if (!this.stringIncludesWithLineBreak(sceneChangeConfig, `MovedDetect[0].EventHandler.AlarmOutEnable=${videoTamperingConfiguration.alarmEnabled}`)) {
+            sceneChangeConfigQueryParams.append('MovedDetect[0].EventHandler.AlarmOutEnable', videoTamperingConfiguration.alarmEnabled.toString());
+        }
+
+        if (!this.stringIncludesWithLineBreak(sceneChangeConfig, `MovedDetect[0].EventHandler.AlarmOut=${videoTamperingConfiguration.alarmEnabled ? 1 : 0}`)) {
+            sceneChangeConfigQueryParams.append('MovedDetect[0].EventHandler.AlarmOut', (videoTamperingConfiguration.alarmEnabled ? 1 : 0).toString());
+        }
+
+        if (!this.stringIncludesWithLineBreak(sceneChangeConfig, `MovedDetect[0].EventHandler.AlarmOutLatch=${videoTamperingConfiguration.alarmDelayTime}`)) {
+            sceneChangeConfigQueryParams.append('MovedDetect[0].EventHandler.AlarmOutLatch', videoTamperingConfiguration.alarmDelayTime.toString());
+        }
+
+        if (sceneChangeConfigQueryParams.size > 0) {
+            await this.setConfigs(sceneChangeConfigQueryParams);
+        }
     }
 
     private async removeCurrentAreaInvasionCoordinates(ruleConfig: string, ruleNumber: number) {

@@ -58,3 +58,41 @@ export type DddnsConfiguration =
         username: string;
         password: string;
     };
+
+export type DefocusConfiguration = {
+    enabled: boolean;
+    sensitivityLevel: number; // 1 to 100
+    dejitterTime: number;
+    delayTime: number;
+    snapshotEnabled: boolean;
+    recordEnabled: boolean;
+    recordDelayTime: number;
+    alarmEnabled: boolean;
+    alarmDelayTime: number;
+};
+
+export type VideoTamperingConfiguration = {
+    enabled: boolean;
+    sensitivityLevel: number; // 1 to 6
+    duration: number; // in seconds
+    percentage: number; // 1 to 100
+    dejitterTime: number; // in seconds
+    delayTime: number; // in seconds
+    snapshotEnabled: boolean;
+    recordEnabled: boolean;
+    recordDelayTime: number; // in seconds
+    alarmEnabled: boolean;
+    alarmDelayTime: number; // in seconds
+};
+
+export type SceneChangeConfiguration = {
+    enabled: boolean;
+    sensitivityLevel: number; // 1 to 5
+    delayTime: number; // in seconds
+    dejitterTime: number; // in seconds
+    snapshotEnabled: boolean;
+    recordEnabled: boolean;
+    recordDelayTime: number; // in seconds
+    alarmEnabled: boolean;
+    alarmDelayTime: number; // in seconds
+};
