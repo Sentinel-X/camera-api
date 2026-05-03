@@ -757,4 +757,388 @@ describe('DahuaDevice', () => {
             expect(error).to.be.instanceOf(HttpRequestError);
         }
     });
+
+    it('updates defocus configuration', async () => {
+        const payload = [
+            'UnFocusDetect[0].Enable=false',
+            'UnFocusDetect[0].Sensitivity=20',
+            'UnFocusDetect[0].EventHandler.Dejitter=2',
+            'UnFocusDetect[0].EventHandler.Delay=5',
+            'UnFocusDetect[0].EventHandler.SnapshotEnable=false',
+            'UnFocusDetect[0].EventHandler.Snapshot=0',
+            'UnFocusDetect[0].EventHandler.RecordEnable=false',
+            'UnFocusDetect[0].EventHandler.Record=0',
+            'UnFocusDetect[0].EventHandler.RecordLatch=10',
+            'UnFocusDetect[0].EventHandler.AlarmOutEnable=false',
+            'UnFocusDetect[0].EventHandler.AlarmOut=0',
+            'UnFocusDetect[0].EventHandler.AlarmOutLatch=5'
+        ].join('\n');
+
+        nock('http://camera.test:80')
+            .get('/cgi-bin/configManager.cgi')
+            .query({ action: 'getConfig', name: 'UnFocusDetect' })
+            .reply(200, payload);
+
+        nock('http://camera.test:80')
+            .get('/cgi-bin/configManager.cgi')
+            .query({
+                action: 'setConfig',
+                'UnFocusDetect[0].Enable': 'true',
+                'UnFocusDetect[0].Sensitivity': '50',
+                'UnFocusDetect[0].EventHandler.Dejitter': '5',
+                'UnFocusDetect[0].EventHandler.Delay': '10',
+                'UnFocusDetect[0].EventHandler.SnapshotEnable': 'true',
+                'UnFocusDetect[0].EventHandler.Snapshot': '1',
+                'UnFocusDetect[0].EventHandler.RecordLatch': '15',
+                'UnFocusDetect[0].EventHandler.AlarmOutEnable': 'true',
+                'UnFocusDetect[0].EventHandler.AlarmOut': '1',
+                'UnFocusDetect[0].EventHandler.AlarmOutLatch': '20'
+            })
+            .reply(200, 'OK');
+
+        const device = new DahuaDevice(defaultConfig);
+
+        await device.setDefocusConfiguration({
+            enabled: true,
+            sensitivityLevel: 50,
+            dejitterTime: 5,
+            delayTime: 10,
+            snapshotEnabled: true,
+            recordEnabled: false,
+            recordDelayTime: 15,
+            alarmEnabled: true,
+            alarmDelayTime: 20
+        });
+    });
+
+    it('does not call setConfig when defocus configuration is already up to date', async () => {
+        const payload = [
+            'UnFocusDetect[0].Enable=true',
+            'UnFocusDetect[0].Sensitivity=50',
+            'UnFocusDetect[0].EventHandler.Dejitter=5',
+            'UnFocusDetect[0].EventHandler.Delay=10',
+            'UnFocusDetect[0].EventHandler.SnapshotEnable=true',
+            'UnFocusDetect[0].EventHandler.Snapshot=1',
+            'UnFocusDetect[0].EventHandler.RecordEnable=false',
+            'UnFocusDetect[0].EventHandler.Record=0',
+            'UnFocusDetect[0].EventHandler.RecordLatch=15',
+            'UnFocusDetect[0].EventHandler.AlarmOutEnable=true',
+            'UnFocusDetect[0].EventHandler.AlarmOut=1',
+            'UnFocusDetect[0].EventHandler.AlarmOutLatch=20'
+        ].join('\n') + '\n';
+
+        nock('http://camera.test:80')
+            .get('/cgi-bin/configManager.cgi')
+            .query({ action: 'getConfig', name: 'UnFocusDetect' })
+            .reply(200, payload);
+
+        const device = new DahuaDevice(defaultConfig);
+
+        await device.setDefocusConfiguration({
+            enabled: true,
+            sensitivityLevel: 50,
+            dejitterTime: 5,
+            delayTime: 10,
+            snapshotEnabled: true,
+            recordEnabled: false,
+            recordDelayTime: 15,
+            alarmEnabled: true,
+            alarmDelayTime: 20
+        });
+    });
+
+    it('throws HttpRequestError when defocus setConfig returns non-ok response', async () => {
+        const payload = [
+            'UnFocusDetect[0].Enable=false'
+        ].join('\n');
+
+        nock('http://camera.test:80')
+            .get('/cgi-bin/configManager.cgi')
+            .query({ action: 'getConfig', name: 'UnFocusDetect' })
+            .reply(200, payload);
+
+        nock('http://camera.test:80')
+            .get('/cgi-bin/configManager.cgi')
+            .query((queryObject) => queryObject.action === 'setConfig')
+            .reply(200, 'error');
+
+        const device = new DahuaDevice(defaultConfig);
+
+        try {
+            await device.setDefocusConfiguration({
+                enabled: true,
+                sensitivityLevel: 50,
+                dejitterTime: 5,
+                delayTime: 10,
+                snapshotEnabled: true,
+                recordEnabled: false,
+                recordDelayTime: 15,
+                alarmEnabled: true,
+                alarmDelayTime: 20
+            });
+            expect.fail('Function should have thrown');
+        } catch (error) {
+            expect(error).to.be.instanceOf(HttpRequestError);
+        }
+    });
+
+    it('updates video tampering configuration', async () => {
+        const payload = [
+            'BlindDetect[0].Enable=false',
+            'BlindDetect[0].Duration=10',
+            'BlindDetect[0].Percent=50',
+            'BlindDetect[0].Level=2',
+            'BlindDetect[0].EventHandler.Dejitter=1',
+            'BlindDetect[0].EventHandler.Delay=2',
+            'BlindDetect[0].EventHandler.SnapshotEnable=false',
+            'BlindDetect[0].EventHandler.Snapshot=0',
+            'BlindDetect[0].EventHandler.RecordEnable=false',
+            'BlindDetect[0].EventHandler.Record=0',
+            'BlindDetect[0].EventHandler.RecordLatch=5',
+            'BlindDetect[0].EventHandler.AlarmOutEnable=false',
+            'BlindDetect[0].EventHandler.AlarmOut=0',
+            'BlindDetect[0].EventHandler.AlarmOutLatch=0'
+        ].join('\n');
+
+        nock('http://camera.test:80')
+            .get('/cgi-bin/configManager.cgi')
+            .query({ action: 'getConfig', name: 'BlindDetect' })
+            .reply(200, payload);
+
+        nock('http://camera.test:80')
+            .get('/cgi-bin/configManager.cgi')
+            .query({
+                action: 'setConfig',
+                'BlindDetect[0].Enable': 'true',
+                'BlindDetect[0].Duration': '30',
+                'BlindDetect[0].Percent': '80',
+                'BlindDetect[0].Level': '4',
+                'BlindDetect[0].EventHandler.Dejitter': '3',
+                'BlindDetect[0].EventHandler.Delay': '5',
+                'BlindDetect[0].EventHandler.SnapshotEnable': 'true',
+                'BlindDetect[0].EventHandler.Snapshot': '1',
+                'BlindDetect[0].EventHandler.RecordEnable': 'true',
+                'BlindDetect[0].EventHandler.Record': '1',
+                'BlindDetect[0].EventHandler.RecordLatch': '10',
+                'BlindDetect[0].EventHandler.AlarmOutLatch': '0'
+            })
+            .reply(200, 'OK');
+
+        const device = new DahuaDevice(defaultConfig);
+
+        await device.setVideoTamperingConfiguration({
+            enabled: true,
+            sensitivityLevel: 4,
+            duration: 30,
+            percentage: 80,
+            dejitterTime: 3,
+            delayTime: 5,
+            snapshotEnabled: true,
+            recordEnabled: true,
+            recordDelayTime: 10,
+            alarmEnabled: false,
+            alarmDelayTime: 0
+        });
+    });
+
+    it('does not call setConfig when video tampering configuration is already up to date', async () => {
+        const payload = [
+            'BlindDetect[0].Enable=true',
+            'BlindDetect[0].Duration=30',
+            'BlindDetect[0].Percent=80',
+            'BlindDetect[0].Level=4',
+            'BlindDetect[0].EventHandler.Dejitter=3',
+            'BlindDetect[0].EventHandler.Delay=5',
+            'BlindDetect[0].EventHandler.SnapshotEnable=true',
+            'BlindDetect[0].EventHandler.Snapshot=1',
+            'BlindDetect[0].EventHandler.RecordEnable=true',
+            'BlindDetect[0].EventHandler.Record=1',
+            'BlindDetect[0].EventHandler.RecordLatch=10',
+            'BlindDetect[0].EventHandler.AlarmOutEnable=false',
+            'BlindDetect[0].EventHandler.AlarmOut=0',
+            'BlindDetect[0].EventHandler.AlarmOutLatch=0'
+        ].join('\n') + '\n';
+
+        nock('http://camera.test:80')
+            .get('/cgi-bin/configManager.cgi')
+            .query({ action: 'getConfig', name: 'BlindDetect' })
+            .reply(200, payload);
+
+        const device = new DahuaDevice(defaultConfig);
+
+        await device.setVideoTamperingConfiguration({
+            enabled: true,
+            sensitivityLevel: 4,
+            duration: 30,
+            percentage: 80,
+            dejitterTime: 3,
+            delayTime: 5,
+            snapshotEnabled: true,
+            recordEnabled: true,
+            recordDelayTime: 10,
+            alarmEnabled: false,
+            alarmDelayTime: 0
+        });
+    });
+
+    it('throws HttpRequestError when video tampering setConfig returns non-ok response', async () => {
+        const payload = [
+            'BlindDetect[0].Enable=false'
+        ].join('\n');
+
+        nock('http://camera.test:80')
+            .get('/cgi-bin/configManager.cgi')
+            .query({ action: 'getConfig', name: 'BlindDetect' })
+            .reply(200, payload);
+
+        nock('http://camera.test:80')
+            .get('/cgi-bin/configManager.cgi')
+            .query((queryObject) => queryObject.action === 'setConfig')
+            .reply(200, 'error');
+
+        const device = new DahuaDevice(defaultConfig);
+
+        try {
+            await device.setVideoTamperingConfiguration({
+                enabled: true,
+                sensitivityLevel: 4,
+                duration: 30,
+                percentage: 80,
+                dejitterTime: 3,
+                delayTime: 5,
+                snapshotEnabled: true,
+                recordEnabled: true,
+                recordDelayTime: 10,
+                alarmEnabled: false,
+                alarmDelayTime: 0
+            });
+            expect.fail('Function should have thrown');
+        } catch (error) {
+            expect(error).to.be.instanceOf(HttpRequestError);
+        }
+    });
+
+    it('updates scene change configuration', async () => {
+        const payload = [
+            'MovedDetect[0].Enable=false',
+            'MovedDetect[0].Sensitivity=1',
+            'MovedDetect[0].EventHandler.Delay=2',
+            'MovedDetect[0].EventHandler.Dejitter=1',
+            'MovedDetect[0].EventHandler.SnapshotEnable=false',
+            'MovedDetect[0].EventHandler.Snapshot=0',
+            'MovedDetect[0].EventHandler.RecordEnable=false',
+            'MovedDetect[0].EventHandler.Record=0',
+            'MovedDetect[0].EventHandler.RecordLatch=5',
+            'MovedDetect[0].EventHandler.AlarmOutEnable=false',
+            'MovedDetect[0].EventHandler.AlarmOut=0',
+            'MovedDetect[0].EventHandler.AlarmOutLatch=5'
+        ].join('\n');
+
+        nock('http://camera.test:80')
+            .get('/cgi-bin/configManager.cgi')
+            .query({ action: 'getConfig', name: 'MovedDetect' })
+            .reply(200, payload);
+
+        nock('http://camera.test:80')
+            .get('/cgi-bin/configManager.cgi')
+            .query({
+                action: 'setConfig',
+                'MovedDetect[0].Enable': 'true',
+                'MovedDetect[0].Sensitivity': '3',
+                'MovedDetect[0].EventHandler.Delay': '5',
+                'MovedDetect[0].EventHandler.Dejitter': '2',
+                'MovedDetect[0].EventHandler.RecordEnable': 'true',
+                'MovedDetect[0].EventHandler.Record': '1',
+                'MovedDetect[0].EventHandler.RecordLatch': '10',
+                'MovedDetect[0].EventHandler.AlarmOutEnable': 'true',
+                'MovedDetect[0].EventHandler.AlarmOut': '1',
+                'MovedDetect[0].EventHandler.AlarmOutLatch': '15'
+            })
+            .reply(200, 'OK');
+
+        const device = new DahuaDevice(defaultConfig);
+
+        await device.setSceneChangeConfiguration({
+            enabled: true,
+            sensitivityLevel: 3,
+            delayTime: 5,
+            dejitterTime: 2,
+            snapshotEnabled: false,
+            recordEnabled: true,
+            recordDelayTime: 10,
+            alarmEnabled: true,
+            alarmDelayTime: 15
+        });
+    });
+
+    it('does not call setConfig when scene change configuration is already up to date', async () => {
+        const payload = [
+            'MovedDetect[0].Enable=true',
+            'MovedDetect[0].Sensitivity=3',
+            'MovedDetect[0].EventHandler.Delay=5',
+            'MovedDetect[0].EventHandler.Dejitter=2',
+            'MovedDetect[0].EventHandler.SnapshotEnable=false',
+            'MovedDetect[0].EventHandler.Snapshot=0',
+            'MovedDetect[0].EventHandler.RecordEnable=true',
+            'MovedDetect[0].EventHandler.Record=1',
+            'MovedDetect[0].EventHandler.RecordLatch=10',
+            'MovedDetect[0].EventHandler.AlarmOutEnable=true',
+            'MovedDetect[0].EventHandler.AlarmOut=1',
+            'MovedDetect[0].EventHandler.AlarmOutLatch=15'
+        ].join('\n') + '\n';
+
+        nock('http://camera.test:80')
+            .get('/cgi-bin/configManager.cgi')
+            .query({ action: 'getConfig', name: 'MovedDetect' })
+            .reply(200, payload);
+
+        const device = new DahuaDevice(defaultConfig);
+
+        await device.setSceneChangeConfiguration({
+            enabled: true,
+            sensitivityLevel: 3,
+            delayTime: 5,
+            dejitterTime: 2,
+            snapshotEnabled: false,
+            recordEnabled: true,
+            recordDelayTime: 10,
+            alarmEnabled: true,
+            alarmDelayTime: 15
+        });
+    });
+
+    it('throws HttpRequestError when scene change setConfig returns non-ok response', async () => {
+        const payload = [
+            'MovedDetect[0].Enable=false'
+        ].join('\n');
+
+        nock('http://camera.test:80')
+            .get('/cgi-bin/configManager.cgi')
+            .query({ action: 'getConfig', name: 'MovedDetect' })
+            .reply(200, payload);
+
+        nock('http://camera.test:80')
+            .get('/cgi-bin/configManager.cgi')
+            .query((queryObject) => queryObject.action === 'setConfig')
+            .reply(200, 'error');
+
+        const device = new DahuaDevice(defaultConfig);
+
+        try {
+            await device.setSceneChangeConfiguration({
+                enabled: true,
+                sensitivityLevel: 3,
+                delayTime: 5,
+                dejitterTime: 2,
+                snapshotEnabled: false,
+                recordEnabled: true,
+                recordDelayTime: 10,
+                alarmEnabled: true,
+                alarmDelayTime: 15
+            });
+            expect.fail('Function should have thrown');
+        } catch (error) {
+            expect(error).to.be.instanceOf(HttpRequestError);
+        }
+    });
 });
