@@ -278,3 +278,40 @@ export type FaceDetectionConfiguration = {
         };
     };
 };
+
+export type LPRConfiguration = {
+    uploadData?: {
+        uploadRealTimeData: boolean;
+        uploadStatisticsData: boolean;
+        uploadPositionData: boolean;
+    };
+    captureSettings?: {
+        countryIndex: number; // 220 = Brazil
+    };
+    vehicleDetectionFeatures?: {
+        safetyBeltDetection: boolean;
+        phoneCallDetection: boolean;
+        helmetDetection: boolean;
+    };
+    imageQualitySettings?: {
+        resolution: {
+            width: number;
+            height: number;
+        }
+    };
+    schedules?: {
+        eventType: 'post' | 'lowSpeed' | 'overSpeed' | 'reverse' | 'changeLane' | 'illegalParking' | 'congestion',
+        schedule: ScheduleConfiguration
+    }[];
+    webhookNotification?: {
+        id: number;
+        protocol: 'http' | 'https';
+        host: string;
+        path: string;
+        port: number;
+    }[];
+    imageUploadOptions?: {
+        uploadBinaryImage: boolean;
+        convertBinaryToBitmap: boolean;
+    };
+};
