@@ -3,7 +3,7 @@ import moment from 'moment-timezone';
 import { BaseDevice } from '../base.js';
 import { HttpRequestError, MissingConfigurationError } from '../../errors.js';
 import { DeviceConfiguration, InvasionAreaCoordinate } from '../../types.js';
-import { Capabilities, DefocusConfiguration, DefocusTriggerConfiguration, DeviceInformation, FieldDetectionConfiguration, FieldDetectionRegion, Hdd, ImageQualityConfiguration, InvasionAreaScheduleConfiguration, LineCrossingConfiguration, OverlayConfiguration, RecordingScheduleConfiguration, RegionEntranceConfiguration, RegionExitingConfiguration, SceneChangeConfiguration, SceneChangeTriggerConfiguration, SetStorageQuotaOptions, TimeConfiguration } from './types.js';
+import { Capabilities, DefocusConfiguration, DefocusTriggerConfiguration, DeviceInformation, FieldDetectionConfiguration, FieldDetectionRegion, Hdd, ImageQualityConfiguration, ScheduleConfiguration, LineCrossingConfiguration, OverlayConfiguration, RecordingScheduleConfiguration, RegionEntranceConfiguration, RegionExitingConfiguration, SceneChangeConfiguration, SceneChangeTriggerConfiguration, SetStorageQuotaOptions, TimeConfiguration, FaceDetectionConfiguration } from './types.js';
 import { parseBoolean, parseDimension } from './utils.js';
 
 export class HikvisionDevice extends BaseDevice {
@@ -1410,7 +1410,240 @@ export class HikvisionDevice extends BaseDevice {
         }
     }
 
-    private parseInvasionAreaScheduleToCamera(schedule: InvasionAreaScheduleConfiguration) {
+    public async setFaceDetectionConfiguration(configuration: FaceDetectionConfiguration) {
+        const res = await this.getDigestClient().fetch(
+            this.buildURL('ISAPI/Custom/OpenPlatform/App'),
+            {
+                signal: this.timeoutSignal
+            }
+        );
+
+        if (res.status !== 200) {
+            throw new HttpRequestError();
+        }
+
+        const customApps = this.xmlParser.parse(await res.text());
+        if (!customApps?.AppList?.App) {
+            throw new HttpRequestError();
+        } else if (!Array.isArray(customApps.AppList.App)) {
+            customApps.AppList.App = [customApps.AppList.App];
+        }
+
+        const facialApp = customApps?.AppList?.App?.find((app: { packageName: string; runStatus: boolean; }) => app?.packageName === 'Face Capture');
+        if (!facialApp) {
+            throw new MissingConfigurationError();
+        }
+
+        const isRunning = parseBoolean(facialApp.runStatus);
+
+        if (configuration.enabled !== isRunning) {
+            const updateResp = await this.getDigestClient().fetch(
+                this.buildURL(`/ISAPI/Custom/OpenPlatform/App/${facialApp.id}/${configuration.enabled ? 'start' : 'stop'}`),
+                {
+                    method: 'put',
+                    headers: {
+                        'content-type': 'application/xml',
+                    },
+                    signal: this.timeoutSignal
+                }
+            );
+
+            if (updateResp.status !== 200) {
+                throw new HttpRequestError();
+            }
+
+            const updateRes = this.xmlParser.parse(await updateResp.text());
+            if (Number(updateRes?.ResponseStatus?.statusCode) !== 1 || updateRes?.ResponseStatus?.subStatusCode !== 'ok') {
+                throw new HttpRequestError();
+            }
+        }
+
+        // App disabled, no need to update remaining settings
+        if (!configuration.enabled) {
+            return;
+        }
+
+        const faceRuleRes = await this.getDigestClient().fetch(
+            this.buildURL('/ISAPI/Intelligent/channels/1/faceRule'),
+            {
+                signal: this.timeoutSignal
+            }
+        );
+
+        if (faceRuleRes.status !== 200) {
+            throw new HttpRequestError();
+        }
+
+        // Enable face rule if not enabled
+        const faceRuleConfig = this.xmlParser.parse(await faceRuleRes.text());
+        if (!faceRuleConfig.FaceRule.enabled) {
+            faceRuleConfig.FaceRule.enabled = true;
+
+            const updateResp = await this.getDigestClient().fetch(
+                this.buildURL('/ISAPI/Intelligent/channels/1/faceRule'),
+                {
+                    method: 'put',
+                    body: this.xmlBuilder.build(faceRuleConfig),
+                    headers: {
+                        'content-type': 'application/xml',
+                    },
+                    signal: this.timeoutSignal
+                }
+            );
+
+            if (updateResp.status !== 200) {
+                throw new HttpRequestError();
+            }
+
+            const updateRes = this.xmlParser.parse(await updateResp.text());
+            if (Number(updateRes?.ResponseStatus?.statusCode) !== 1 || updateRes?.ResponseStatus?.subStatusCode !== 'ok') {
+                throw new HttpRequestError();
+            }
+        }
+
+        // Set alarm schedule
+        if (configuration.schedule) {
+            const updateScheduleResp = await this.getDigestClient().fetch(
+                this.buildURL('/ISAPI/Event/schedules/faceSnap/faceSnap-1'),
+                {
+                    method: 'put',
+                    body: this.xmlBuilder.build({
+                        '?xml': { '@_version': '1.0', '@_encoding': 'UTF-8' }, 'Schedule': {
+                            'id': 'faceSnap-1', 'eventType': 'faceSnap', 'videoInputChannelID': 1, 'TimeBlockList': {
+                                'TimeBlock':
+                                    [
+                                        { 'dayOfWeek': 1, 'TimeRange': { 'beginTime': configuration.schedule.monday.start, 'endTime': configuration.schedule.monday.end } },
+                                        { 'dayOfWeek': 2, 'TimeRange': { 'beginTime': configuration.schedule.tuesday.start, 'endTime': configuration.schedule.tuesday.end } },
+                                        { 'dayOfWeek': 3, 'TimeRange': { 'beginTime': configuration.schedule.wednesday.start, 'endTime': configuration.schedule.wednesday.end } },
+                                        { 'dayOfWeek': 4, 'TimeRange': { 'beginTime': configuration.schedule.thursday.start, 'endTime': configuration.schedule.thursday.end } },
+                                        { 'dayOfWeek': 5, 'TimeRange': { 'beginTime': configuration.schedule.friday.start, 'endTime': configuration.schedule.friday.end } },
+                                        { 'dayOfWeek': 6, 'TimeRange': { 'beginTime': configuration.schedule.saturday.start, 'endTime': configuration.schedule.saturday.end } },
+                                        { 'dayOfWeek': 7, 'TimeRange': { 'beginTime': configuration.schedule.sunday.start, 'endTime': configuration.schedule.sunday.end } }
+                                    ]
+                            }
+                        }
+                    }),
+                    headers: {
+                        'content-type': 'application/xml',
+                    },
+                    signal: this.timeoutSignal
+                }
+            );
+
+            if (updateScheduleResp.status !== 200) {
+                throw new HttpRequestError();
+            }
+
+            const updateScheduleRes = this.xmlParser.parse(await updateScheduleResp.text());
+            if (Number(updateScheduleRes?.ResponseStatus?.statusCode) !== 1 || updateScheduleRes?.ResponseStatus?.subStatusCode !== 'ok') {
+                throw new HttpRequestError();
+            }
+        }
+
+        // Update overlay capture settings
+        if (configuration.pictureConfiguration) {
+            const updateOverlayCaptureResp = await this.getDigestClient().fetch(
+                this.buildURL('/ISAPI/Intelligent/channels/1/faceSnap/overlapPic?format=json'),
+                {
+                    method: 'put',
+                    body: JSON.stringify({
+                        'OverlapPic': {
+                            'AddIntelInfo': {
+                                'streamWithIntelInfo': configuration.pictureConfiguration.overlay.displayVCAOnStream,
+                                'alarmWithTargetInfo': configuration.pictureConfiguration.overlay.displayTargetOnAlarm
+                            },
+                            'TargetPicParam': {
+                                'targetPicMode': configuration.pictureConfiguration.pictureSettings.mode,
+                                'targetPicWidth': configuration.pictureConfiguration.pictureSettings.faceDimensions.width,
+                                'headHeight': configuration.pictureConfiguration.pictureSettings.faceDimensions.height,
+                                'bodyHeight': configuration.pictureConfiguration.pictureSettings.faceDimensions.bodyHeight,
+                                'TargetPicHeight': {
+                                    'enable': configuration.pictureConfiguration.pictureSettings.fixedPictureHeight.enabled,
+                                    'height': configuration.pictureConfiguration.pictureSettings.fixedPictureHeight.height
+                                },
+                                'FaceBeautification': {
+                                    'enable': configuration.pictureConfiguration.pictureSettings.faceBeautification.enabled,
+                                    'level': configuration.pictureConfiguration.pictureSettings.faceBeautification.level
+                                }
+                            },
+                            'AlarmPicParam': {
+                                'backgroundPicUpload': configuration.pictureConfiguration.pictureUpload.uploadBackground,
+                                'picQuality': configuration.pictureConfiguration.pictureUpload.quality,
+                                'PicSize': {
+                                    'width': configuration.pictureConfiguration.pictureUpload.resolution.width,
+                                    'height': configuration.pictureConfiguration.pictureUpload.resolution.height
+                                },
+                                'facePictureUpload': configuration.pictureConfiguration.pictureUpload.uploadFacePicture
+                            },
+                            'AlarmOsdParam': configuration.pictureConfiguration.pictureSettings.textOverlays.map(overlay => {
+                                return {
+                                    'enabled': overlay.enabled,
+                                    'osdIndex': overlay.index,
+                                    'osdValue': overlay.value,
+                                };
+                            }),
+                        }
+                    }),
+                    headers: {
+                        'content-type': 'application/json',
+                    },
+                    signal: this.timeoutSignal
+                }
+            );
+
+            if (updateOverlayCaptureResp.status !== 200) {
+                throw new HttpRequestError();
+            }
+
+            const updateOverlayCaptureRes = await updateOverlayCaptureResp.json();
+            if (Number(updateOverlayCaptureRes?.statusCode) !== 1 || updateOverlayCaptureRes?.subStatusCode !== 'ok') {
+                throw new HttpRequestError();
+            }
+        }
+
+        // Configure webhooks
+        if (configuration.webhookNotification && configuration.webhookNotification.length > 0) {
+            for (const webhook of configuration.webhookNotification) {
+                const updateEndpointsResp = await this.getDigestClient().fetch(
+                    this.buildURL('/ISAPI/Event/notification/httpHosts'),
+                    {
+                        method: 'put',
+                        body: this.xmlBuilder.build({
+                            '?xml': { '@_encoding': 'UTF-8' },
+                            HttpHostNotificationList: {
+                                HttpHostNotification: {
+                                    id: webhook.id,
+                                    protocolType: webhook.protocol.toUpperCase(),
+                                    hostName: webhook.host,
+                                    url: webhook.path,
+                                    portNo: webhook.port,
+                                    parameterFormatType: 'XML',
+                                    addressingFormatType: 'hostname',
+                                    httpBroken: false,
+                                    httpAuthenticationMethod: 'none'
+                                }
+                            }
+                        }),
+                        headers: {
+                            'content-type': 'application/xml',
+                        },
+                        signal: this.timeoutSignal
+                    }
+                );
+
+                if (updateEndpointsResp.status !== 200) {
+                    throw new HttpRequestError();
+                }
+
+                const updateEndpointsRes = this.xmlParser.parse(await updateEndpointsResp.text());
+                if (Number(updateEndpointsRes?.ResponseStatus?.statusCode) !== 1 || updateEndpointsRes?.ResponseStatus?.subStatusCode !== 'ok') {
+                    throw new HttpRequestError();
+                }
+            }
+        }
+    }
+
+    private parseInvasionAreaScheduleToCamera(schedule: ScheduleConfiguration) {
         return {
             'TimeBlock': [
                 {

@@ -2736,6 +2736,319 @@ describe('HikvisionDevice', () => {
         }
       });
 
+      it('updates face detection configuration including schedule, picture settings and webhooks', async () => {
+        const customAppsPayload = `<?xml version="1.0" encoding="UTF-8"?>
+        <AppList version="2.0" xmlns="http://www.hikvision.com/ver20/XMLSchema">
+          <App>
+            <id>1</id>
+            <packageName>Face Capture</packageName>
+            <runStatus>false</runStatus>
+          </App>
+          <App>
+            <id>2</id>
+            <packageName>Smart Event</packageName>
+            <runStatus>false</runStatus>
+          </App>
+        </AppList>`;
+
+        const faceRulePayload = `<?xml version="1.0" encoding="UTF-8"?>
+        <FaceRule>
+          <enabled>false</enabled>
+        </FaceRule>`;
+
+        const okResponse = `<?xml version="1.0" encoding="UTF-8"?>
+        <ResponseStatus>
+          <statusCode>1</statusCode>
+          <subStatusCode>ok</subStatusCode>
+        </ResponseStatus>`;
+
+        let faceRulePutBody = '';
+        let schedulePutBody = '';
+        let overlapPicPutBody: unknown;
+        const webhookBodies: string[] = [];
+
+        nock('http://hikvision.test:80')
+          .get('/ISAPI/Custom/OpenPlatform/App')
+          .reply(200, customAppsPayload);
+
+        nock('http://hikvision.test:80')
+          .put('/ISAPI/Custom/OpenPlatform/App/1/start')
+          .reply(200, okResponse);
+
+        nock('http://hikvision.test:80')
+          .get('/ISAPI/Intelligent/channels/1/faceRule')
+          .reply(200, faceRulePayload);
+
+        nock('http://hikvision.test:80')
+          .put('/ISAPI/Intelligent/channels/1/faceRule', (body: string) => {
+            faceRulePutBody = String(body);
+            return true;
+          })
+          .reply(200, okResponse);
+
+        nock('http://hikvision.test:80')
+          .put('/ISAPI/Event/schedules/faceSnap/faceSnap-1', (body: string) => {
+            schedulePutBody = String(body);
+            return true;
+          })
+          .reply(200, okResponse);
+
+        nock('http://hikvision.test:80')
+          .put('/ISAPI/Intelligent/channels/1/faceSnap/overlapPic', (body: unknown) => {
+            overlapPicPutBody = body;
+            return true;
+          })
+          .query({ format: 'json' })
+          .reply(200, {
+            statusCode: 1,
+            subStatusCode: 'ok'
+          });
+
+        nock('http://hikvision.test:80')
+          .put('/ISAPI/Event/notification/httpHosts', (body: string) => {
+            webhookBodies.push(String(body));
+            return true;
+          })
+          .times(2)
+          .reply(200, okResponse);
+
+        const device = new HikvisionDevice(defaultConfig);
+
+        await device.setFaceDetectionConfiguration({
+          enabled: true,
+          schedule: {
+            monday: { start: '01:00:00', end: '02:00:00' },
+            tuesday: { start: '03:00:00', end: '04:00:00' },
+            wednesday: { start: '05:00:00', end: '06:00:00' },
+            thursday: { start: '07:00:00', end: '08:00:00' },
+            friday: { start: '09:00:00', end: '10:00:00' },
+            saturday: { start: '11:00:00', end: '12:00:00' },
+            sunday: { start: '13:00:00', end: '14:00:00' }
+          },
+          pictureConfiguration: {
+            overlay: {
+              displayVCAOnStream: true,
+              displayTargetOnAlarm: false
+            },
+            pictureUpload: {
+              uploadBackground: false,
+              uploadFacePicture: true,
+              quality: 'best',
+              resolution: {
+                width: 1920,
+                height: 1080
+              }
+            },
+            pictureSettings: {
+              mode: 'custom',
+              faceDimensions: {
+                width: 1.8,
+                height: 1.6,
+                bodyHeight: 0.5
+              },
+              faceBeautification: {
+                enabled: true,
+                level: 50
+              },
+              fixedPictureHeight: {
+                enabled: true,
+                height: 220
+              },
+              textOverlays: [
+                {
+                  enabled: true,
+                  index: 'snapTimeOsd',
+                  value: ''
+                },
+                {
+                  enabled: false,
+                  index: 'cameraNo',
+                  value: 'CAM-1'
+                }
+              ]
+            }
+          },
+          webhookNotification: [
+            {
+              id: 1,
+              protocol: 'https',
+              host: 'face-v2.sentinelx.com.br',
+              path: '/hik_pro_connect',
+              port: 443
+            },
+            {
+              id: 2,
+              protocol: 'http',
+              host: 'example.test',
+              path: '/hook',
+              port: 80
+            }
+          ]
+        });
+
+        expect(faceRulePutBody).to.include('<enabled>true</enabled>');
+
+        expect(schedulePutBody).to.include('<eventType>faceSnap</eventType>');
+        expect(schedulePutBody).to.include('<dayOfWeek>1</dayOfWeek>');
+        expect(schedulePutBody).to.include('<beginTime>01:00:00</beginTime>');
+        expect(schedulePutBody).to.include('<endTime>02:00:00</endTime>');
+
+        const overlapPayload = typeof overlapPicPutBody === 'string'
+          ? JSON.parse(overlapPicPutBody)
+          : overlapPicPutBody;
+        expect(overlapPayload.OverlapPic.AddIntelInfo.streamWithIntelInfo).to.equal(true);
+        expect(overlapPayload.OverlapPic.AddIntelInfo.alarmWithTargetInfo).to.equal(false);
+        expect(overlapPayload.OverlapPic.TargetPicParam.targetPicMode).to.equal('custom');
+        expect(overlapPayload.OverlapPic.AlarmPicParam.PicSize.width).to.equal(1920);
+        expect(overlapPayload.OverlapPic.AlarmOsdParam[1].osdIndex).to.equal('cameraNo');
+        expect(overlapPayload.OverlapPic.AlarmOsdParam[1].osdValue).to.equal('CAM-1');
+
+        expect(webhookBodies).to.have.length(2);
+        expect(webhookBodies[0]).to.include('<id>1</id>');
+        expect(webhookBodies[0]).to.include('<protocolType>HTTPS</protocolType>');
+        expect(webhookBodies[0]).to.include('<hostName>face-v2.sentinelx.com.br</hostName>');
+        expect(webhookBodies[1]).to.include('<id>2</id>');
+        expect(webhookBodies[1]).to.include('<protocolType>HTTP</protocolType>');
+        expect(webhookBodies[1]).to.include('<hostName>example.test</hostName>');
+      });
+
+      it('disables face detection app and skips remaining updates', async () => {
+        const customAppsPayload = `<?xml version="1.0" encoding="UTF-8"?>
+        <AppList version="2.0" xmlns="http://www.hikvision.com/ver20/XMLSchema">
+          <App>
+            <id>1</id>
+            <packageName>Face Capture</packageName>
+            <runStatus>true</runStatus>
+          </App>
+        </AppList>`;
+
+        const okResponse = `<?xml version="1.0" encoding="UTF-8"?>
+        <ResponseStatus>
+          <statusCode>1</statusCode>
+          <subStatusCode>ok</subStatusCode>
+        </ResponseStatus>`;
+
+        nock('http://hikvision.test:80')
+          .get('/ISAPI/Custom/OpenPlatform/App')
+          .reply(200, customAppsPayload);
+
+        nock('http://hikvision.test:80')
+          .put('/ISAPI/Custom/OpenPlatform/App/1/stop')
+          .reply(200, okResponse);
+
+        const device = new HikvisionDevice(defaultConfig);
+
+        await device.setFaceDetectionConfiguration({
+          enabled: false,
+          schedule: {
+            monday: { start: '00:00:00', end: '24:00:00' },
+            tuesday: { start: '00:00:00', end: '24:00:00' },
+            wednesday: { start: '00:00:00', end: '24:00:00' },
+            thursday: { start: '00:00:00', end: '24:00:00' },
+            friday: { start: '00:00:00', end: '24:00:00' },
+            saturday: { start: '00:00:00', end: '24:00:00' },
+            sunday: { start: '00:00:00', end: '24:00:00' }
+          }
+        });
+      });
+
+      it('throws MissingConfigurationError when Face Capture app is not available', async () => {
+        const customAppsPayload = `<?xml version="1.0" encoding="UTF-8"?>
+        <AppList version="2.0" xmlns="http://www.hikvision.com/ver20/XMLSchema">
+          <App>
+            <id>2</id>
+            <packageName>Smart Event</packageName>
+            <runStatus>false</runStatus>
+          </App>
+        </AppList>`;
+
+        nock('http://hikvision.test:80')
+          .get('/ISAPI/Custom/OpenPlatform/App')
+          .reply(200, customAppsPayload);
+
+        const device = new HikvisionDevice(defaultConfig);
+
+        try {
+          await device.setFaceDetectionConfiguration({
+            enabled: true
+          });
+          expect.fail('Function should have thrown');
+        } catch (error) {
+          expect(error).to.be.instanceOf(MissingConfigurationError);
+        }
+      });
+
+      it('throws HttpRequestError when face detection app listing request fails', async () => {
+        nock('http://hikvision.test:80')
+          .get('/ISAPI/Custom/OpenPlatform/App')
+          .reply(500, 'error');
+
+        const device = new HikvisionDevice(defaultConfig);
+
+        try {
+          await device.setFaceDetectionConfiguration({
+            enabled: true
+          });
+          expect.fail('Function should have thrown');
+        } catch (error) {
+          expect(error).to.be.instanceOf(HttpRequestError);
+        }
+      });
+
+      it('throws HttpRequestError when face detection schedule update response is invalid', async () => {
+        const customAppsPayload = `<?xml version="1.0" encoding="UTF-8"?>
+        <AppList version="2.0" xmlns="http://www.hikvision.com/ver20/XMLSchema">
+          <App>
+            <id>1</id>
+            <packageName>Face Capture</packageName>
+            <runStatus>true</runStatus>
+          </App>
+        </AppList>`;
+
+        const faceRulePayload = `<?xml version="1.0" encoding="UTF-8"?>
+        <FaceRule>
+          <enabled>true</enabled>
+        </FaceRule>`;
+
+        const invalidResponse = `<?xml version="1.0" encoding="UTF-8"?>
+        <ResponseStatus>
+          <statusCode>2</statusCode>
+          <subStatusCode>error</subStatusCode>
+        </ResponseStatus>`;
+
+        nock('http://hikvision.test:80')
+          .get('/ISAPI/Custom/OpenPlatform/App')
+          .reply(200, customAppsPayload);
+
+        nock('http://hikvision.test:80')
+          .get('/ISAPI/Intelligent/channels/1/faceRule')
+          .reply(200, faceRulePayload);
+
+        nock('http://hikvision.test:80')
+          .put('/ISAPI/Event/schedules/faceSnap/faceSnap-1')
+          .reply(200, invalidResponse);
+
+        const device = new HikvisionDevice(defaultConfig);
+
+        try {
+          await device.setFaceDetectionConfiguration({
+            enabled: true,
+            schedule: {
+              monday: { start: '00:00:00', end: '24:00:00' },
+              tuesday: { start: '00:00:00', end: '24:00:00' },
+              wednesday: { start: '00:00:00', end: '24:00:00' },
+              thursday: { start: '00:00:00', end: '24:00:00' },
+              friday: { start: '00:00:00', end: '24:00:00' },
+              saturday: { start: '00:00:00', end: '24:00:00' },
+              sunday: { start: '00:00:00', end: '24:00:00' },
+            }
+          });
+          expect.fail('Function should have thrown');
+        } catch (error) {
+          expect(error).to.be.instanceOf(HttpRequestError);
+        }
+      });
+
       it('reboots camera when response is ok', async () => {
         const rebootPayload = `<?xml version="1.0" encoding="UTF-8"?>
         <ResponseStatus>
