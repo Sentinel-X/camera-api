@@ -144,7 +144,7 @@ export type DeviceInformation = {
     firmwareVersion: string;
 };
 
-export type InvasionAreaScheduleConfiguration = {
+export type ScheduleConfiguration = {
     monday: {
         start: string; // e.g: "00:00:00"
         end: string; // e.g: "24:00:00"
@@ -184,7 +184,7 @@ export type FieldDetectionConfiguration = {
         timeThreshold?: number; // in seconds 1-60
         confidenceLevel?: 'low' | 'mediumLow' | 'mediumHigh' | 'high';
     }[];
-    schedule?: InvasionAreaScheduleConfiguration;
+    schedule?: ScheduleConfiguration;
 };
 
 export type LineCrossingConfiguration = {
@@ -196,7 +196,7 @@ export type LineCrossingConfiguration = {
         confidenceLevel?: 'low' | 'mediumLow' | 'mediumHigh' | 'high';
         crossingDirection?: 'any' | 'left-right' | 'right-left';
     }[];
-    schedule?: InvasionAreaScheduleConfiguration;
+    schedule?: ScheduleConfiguration;
 };
 
 export type RegionEntranceConfiguration = {
@@ -207,7 +207,7 @@ export type RegionEntranceConfiguration = {
         detectionTarget?: ('human' | 'vehicle')[];
         confidenceLevel?: 'low' | 'mediumLow' | 'mediumHigh' | 'high';
     }[];
-    schedule?: InvasionAreaScheduleConfiguration;
+    schedule?: ScheduleConfiguration;
 };
 
 
@@ -219,5 +219,62 @@ export type RegionExitingConfiguration = {
         detectionTarget?: ('human' | 'vehicle')[];
         confidenceLevel?: 'low' | 'mediumLow' | 'mediumHigh' | 'high';
     }[];
-    schedule?: InvasionAreaScheduleConfiguration;
+    schedule?: ScheduleConfiguration;
+};
+
+export type FaceDetectionConfiguration = {
+    enabled: boolean;
+    schedule?: ScheduleConfiguration;
+    webhookNotification?: {
+        id: number;
+        protocol: 'http' | 'https';
+        host: string;
+        path: string;
+        port: number;
+    }[];
+    pictureConfiguration?: {
+        overlay: {
+            displayVCAOnStream: boolean;
+            displayTargetOnAlarm: boolean;
+        };
+        pictureUpload: {
+            uploadBackground: boolean;
+            uploadFacePicture: boolean;
+            quality: 'best' | 'better' | 'general';
+            resolution: {
+                width: number;
+                height: number;
+            };
+        };
+        pictureSettings: {
+            mode: 'custom' | 'head' | 'headShoulders' | 'human';
+            faceDimensions: {
+                width: number;
+                height: number;
+                bodyHeight: number;
+            };
+            faceBeautification:
+            | {
+                enabled: true;
+                level: number; // 0 to 100
+            } | {
+                enabled: false;
+                level?: never;
+            };
+            fixedPictureHeight:
+            |
+            {
+                enabled: true;
+                height: number;
+            } | {
+                enabled: false;
+                height?: never;
+            };
+            textOverlays: {
+                enabled: boolean;
+                index: string;
+                value: string;
+            }[];
+        };
+    };
 };
