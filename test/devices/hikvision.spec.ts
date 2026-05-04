@@ -3049,6 +3049,357 @@ describe('HikvisionDevice', () => {
         }
       });
 
+      it('updates lpr configuration across upload, capture, vehicle, schedule, webhook and image upload sections', async () => {
+        const okXmlResponse = `<?xml version="1.0" encoding="UTF-8"?>
+        <ResponseStatus>
+          <statusCode>1</statusCode>
+          <subStatusCode>ok</subStatusCode>
+        </ResponseStatus>`;
+
+        const tpsPayload = `<?xml version="1.0" encoding="UTF-8"?>
+        <TPS>
+          <enRealtimeDataUpload>false</enRealtimeDataUpload>
+          <enStatisticalDataUpload>false</enStatisticalDataUpload>
+          <posEnable>false</posEnable>
+        </TPS>`;
+
+        const platePayload = `<?xml version="1.0" encoding="UTF-8"?>
+        <PlateRecognitionParam>
+          <countryIndex>220</countryIndex>
+        </PlateRecognitionParam>`;
+
+        const carFeaturePayload = `<?xml version="1.0" encoding="UTF-8"?>
+        <CarFeatureParam>
+          <safetyBeltEnabled>true</safetyBeltEnabled>
+          <callEnabled>true</callEnabled>
+          <helmetEnabled>true</helmetEnabled>
+        </CarFeatureParam>`;
+
+        const capResPayload = `<?xml version="1.0" encoding="UTF-8"?>
+        <CapResolution>
+          <capResolutionWidth>1920</capResolutionWidth>
+          <capResolutionHeight>1080</capResolutionHeight>
+        </CapResolution>`;
+
+        let tpsPutBody = '';
+        let platePutBody = '';
+        let carFeaturePutBody = '';
+        let capResPutBody = '';
+        let schedulePutBody: unknown;
+        let mixedTargetPutBody: unknown;
+        const webhookBodies: string[] = [];
+
+        nock('http://hikvision.test:80')
+          .get('/ISAPI/ITC/TriggerMode/TPS')
+          .reply(200, tpsPayload);
+
+        nock('http://hikvision.test:80')
+          .put('/ISAPI/ITC/TriggerMode/TPS', (body: string) => {
+            tpsPutBody = String(body);
+            return true;
+          })
+          .reply(200, okXmlResponse);
+
+        nock('http://hikvision.test:80')
+          .get('/ISAPI/ITC/plateRecognitionParam')
+          .reply(200, platePayload);
+
+        nock('http://hikvision.test:80')
+          .put('/ISAPI/ITC/plateRecognitionParam', (body: string) => {
+            platePutBody = String(body);
+            return true;
+          })
+          .reply(200, okXmlResponse);
+
+        nock('http://hikvision.test:80')
+          .get('/ISAPI/ITC/carFeatureParam')
+          .reply(200, carFeaturePayload);
+
+        nock('http://hikvision.test:80')
+          .put('/ISAPI/ITC/carFeatureParam', (body: string) => {
+            carFeaturePutBody = String(body);
+            return true;
+          })
+          .reply(200, okXmlResponse);
+
+        nock('http://hikvision.test:80')
+          .get('/ISAPI/ITC/Snapshot/channels/1/capResInfo')
+          .reply(200, capResPayload);
+
+        nock('http://hikvision.test:80')
+          .put('/ISAPI/ITC/Snapshot/channels/1/capResInfo', (body: string) => {
+            capResPutBody = String(body);
+            return true;
+          })
+          .reply(200, okXmlResponse);
+
+        nock('http://hikvision.test:80')
+          .get('/ISAPI/ITC/illegalSchedules')
+          .query({ format: 'json' })
+          .reply(200, {
+            IllegalScheduleList: [
+              {
+                Schedule: {
+                  eventType: 'post',
+                  TimeBlockList: []
+                }
+              },
+              {
+                Schedule: {
+                  eventType: 'overSpeed',
+                  TimeBlockList: []
+                }
+              }
+            ]
+          });
+
+        nock('http://hikvision.test:80')
+          .put('/ISAPI/ITC/illegalSchedules', (body: unknown) => {
+            schedulePutBody = body;
+            return true;
+          })
+          .query({ format: 'json' })
+          .reply(200, {
+            statusCode: 1,
+            subStatusCode: 'ok'
+          });
+
+        nock('http://hikvision.test:80')
+          .put('/ISAPI/Event/notification/httpHosts', (body: string) => {
+            webhookBodies.push(String(body));
+            return true;
+          })
+          .times(2)
+          .reply(200, okXmlResponse);
+
+        nock('http://hikvision.test:80')
+          .get('/ISAPI/Intelligent/channels/1/mixedTargetDetection')
+          .query({ format: 'json' })
+          .reply(200, {
+            MixedTargetDetection: {
+              isSupportBinaryPicUp: false,
+              convertBinToBmpEnabled: false
+            }
+          });
+
+        nock('http://hikvision.test:80')
+          .put('/ISAPI/Intelligent/channels/1/mixedTargetDetection', (body: unknown) => {
+            mixedTargetPutBody = body;
+            return true;
+          })
+          .query({ format: 'json' })
+          .reply(200, {
+            statusCode: 1,
+            subStatusCode: 'ok'
+          });
+
+        const device = new HikvisionDevice(defaultConfig);
+
+        await device.setLPRConfiguration({
+          uploadData: {
+            uploadRealTimeData: true,
+            uploadStatisticsData: true,
+            uploadPositionData: true
+          },
+          captureSettings: {
+            countryIndex: 76
+          },
+          vehicleDetectionFeatures: {
+            safetyBeltDetection: false,
+            phoneCallDetection: false,
+            helmetDetection: false
+          },
+          imageQualitySettings: {
+            resolution: {
+              width: 2688,
+              height: 1520
+            }
+          },
+          schedules: [
+            {
+              eventType: 'post',
+              schedule: {
+                monday: { start: '01:00:00', end: '02:00:00' },
+                tuesday: { start: '03:00:00', end: '04:00:00' },
+                wednesday: { start: '05:00:00', end: '06:00:00' },
+                thursday: { start: '07:00:00', end: '08:00:00' },
+                friday: { start: '09:00:00', end: '10:00:00' },
+                saturday: { start: '11:00:00', end: '12:00:00' },
+                sunday: { start: '13:00:00', end: '14:00:00' },
+              }
+            }
+          ],
+          webhookNotification: [
+            {
+              id: 1,
+              protocol: 'http',
+              host: 'lpr-v2.sentinelx.com.br',
+              path: '/hik_pro_connect',
+              port: 80
+            },
+            {
+              id: 2,
+              protocol: 'https',
+              host: 'hooks.test',
+              path: '/lpr',
+              port: 443
+            }
+          ],
+          imageUploadOptions: {
+            uploadBinaryImage: true,
+            convertBinaryToBitmap: true
+          }
+        });
+
+        expect(tpsPutBody).to.include('<enRealtimeDataUpload>true</enRealtimeDataUpload>');
+        expect(tpsPutBody).to.include('<enStatisticalDataUpload>true</enStatisticalDataUpload>');
+        expect(tpsPutBody).to.include('<posEnable>true</posEnable>');
+
+        expect(platePutBody).to.include('<countryIndex>76</countryIndex>');
+
+        expect(carFeaturePutBody).to.include('<safetyBeltEnabled>false</safetyBeltEnabled>');
+        expect(carFeaturePutBody).to.include('<callEnabled>false</callEnabled>');
+        expect(carFeaturePutBody).to.include('<helmetEnabled>false</helmetEnabled>');
+
+        expect(capResPutBody).to.include('<capResolutionWidth>2688</capResolutionWidth>');
+        expect(capResPutBody).to.include('<capResolutionHeight>1520</capResolutionHeight>');
+
+        const schedulePayload = typeof schedulePutBody === 'string'
+          ? JSON.parse(schedulePutBody)
+          : schedulePutBody;
+        expect(schedulePayload.IllegalScheduleList[0].Schedule.TimeBlockList[0].TimeBlock.dayOfWeek).to.equal(1);
+        expect(schedulePayload.IllegalScheduleList[0].Schedule.TimeBlockList[0].TimeBlock.TimeRangeList[0].TimeRange.beginTime).to.equal('01:00:00');
+        expect(schedulePayload.IllegalScheduleList[0].Schedule.TimeBlockList[0].TimeBlock.TimeRangeList[0].TimeRange.endTime).to.equal('02:00:00');
+
+        expect(webhookBodies).to.have.length(2);
+        expect(webhookBodies[0]).to.include('<id>1</id>');
+        expect(webhookBodies[0]).to.include('<protocolType>HTTP</protocolType>');
+        expect(webhookBodies[0]).to.include('<hostName>lpr-v2.sentinelx.com.br</hostName>');
+        expect(webhookBodies[0]).to.include('<detectionUpLoadPicturesType>all</detectionUpLoadPicturesType>');
+        expect(webhookBodies[1]).to.include('<id>2</id>');
+        expect(webhookBodies[1]).to.include('<protocolType>HTTPS</protocolType>');
+
+        const mixedPayload = typeof mixedTargetPutBody === 'string'
+          ? JSON.parse(mixedTargetPutBody)
+          : mixedTargetPutBody;
+        expect(mixedPayload.MixedTargetDetection.isSupportBinaryPicUp).to.equal('true');
+        expect(mixedPayload.MixedTargetDetection.convertBinToBmpEnabled).to.equal(true);
+      });
+
+      it('does not send lpr capture settings update when country index is unchanged', async () => {
+        const platePayload = `<?xml version="1.0" encoding="UTF-8"?>
+        <PlateRecognitionParam>
+          <countryIndex>220</countryIndex>
+        </PlateRecognitionParam>`;
+
+        nock('http://hikvision.test:80')
+          .get('/ISAPI/ITC/plateRecognitionParam')
+          .reply(200, platePayload);
+
+        const device = new HikvisionDevice(defaultConfig);
+
+        await device.setLPRConfiguration({
+          captureSettings: {
+            countryIndex: 220
+          }
+        });
+      });
+
+      it('throws MissingConfigurationError when lpr schedule event type is not found', async () => {
+        nock('http://hikvision.test:80')
+          .get('/ISAPI/ITC/illegalSchedules')
+          .query({ format: 'json' })
+          .reply(200, {
+            IllegalScheduleList: [
+              {
+                Schedule: {
+                  eventType: 'post',
+                  TimeBlockList: []
+                }
+              }
+            ]
+          });
+
+        const device = new HikvisionDevice(defaultConfig);
+
+        try {
+          await device.setLPRConfiguration({
+            schedules: [
+              {
+                eventType: 'overSpeed',
+                schedule: {
+                  monday: { start: '00:00:00', end: '24:00:00' },
+                  tuesday: { start: '00:00:00', end: '24:00:00' },
+                  wednesday: { start: '00:00:00', end: '24:00:00' },
+                  thursday: { start: '00:00:00', end: '24:00:00' },
+                  friday: { start: '00:00:00', end: '24:00:00' },
+                  saturday: { start: '00:00:00', end: '24:00:00' },
+                  sunday: { start: '00:00:00', end: '24:00:00' },
+                }
+              }
+            ]
+          });
+          expect.fail('Function should have thrown');
+        } catch (error) {
+          expect(error).to.be.instanceOf(MissingConfigurationError);
+        }
+      });
+
+      it('throws HttpRequestError when lpr upload data request fails', async () => {
+        nock('http://hikvision.test:80')
+          .get('/ISAPI/ITC/TriggerMode/TPS')
+          .reply(500, 'error');
+
+        const device = new HikvisionDevice(defaultConfig);
+
+        try {
+          await device.setLPRConfiguration({
+            uploadData: {
+              uploadRealTimeData: true,
+              uploadStatisticsData: true,
+              uploadPositionData: true
+            }
+          });
+          expect.fail('Function should have thrown');
+        } catch (error) {
+          expect(error).to.be.instanceOf(HttpRequestError);
+        }
+      });
+
+      it('throws HttpRequestError when lpr mixed target update response is invalid', async () => {
+        nock('http://hikvision.test:80')
+          .get('/ISAPI/Intelligent/channels/1/mixedTargetDetection')
+          .query({ format: 'json' })
+          .reply(200, {
+            MixedTargetDetection: {
+              isSupportBinaryPicUp: false,
+              convertBinToBmpEnabled: false
+            }
+          });
+
+        nock('http://hikvision.test:80')
+          .put('/ISAPI/Intelligent/channels/1/mixedTargetDetection')
+          .query({ format: 'json' })
+          .reply(200, {
+            statusCode: 2,
+            subStatusCode: 'error'
+          });
+
+        const device = new HikvisionDevice(defaultConfig);
+
+        try {
+          await device.setLPRConfiguration({
+            imageUploadOptions: {
+              uploadBinaryImage: true,
+              convertBinaryToBitmap: true
+            }
+          });
+          expect.fail('Function should have thrown');
+        } catch (error) {
+          expect(error).to.be.instanceOf(HttpRequestError);
+        }
+      });
+
       it('reboots camera when response is ok', async () => {
         const rebootPayload = `<?xml version="1.0" encoding="UTF-8"?>
         <ResponseStatus>

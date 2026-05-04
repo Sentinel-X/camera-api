@@ -3,7 +3,7 @@ import moment from 'moment-timezone';
 import { BaseDevice } from '../base.js';
 import { HttpRequestError, MissingConfigurationError } from '../../errors.js';
 import { DeviceConfiguration, InvasionAreaCoordinate } from '../../types.js';
-import { Capabilities, DefocusConfiguration, DefocusTriggerConfiguration, DeviceInformation, FieldDetectionConfiguration, FieldDetectionRegion, Hdd, ImageQualityConfiguration, ScheduleConfiguration, LineCrossingConfiguration, OverlayConfiguration, RecordingScheduleConfiguration, RegionEntranceConfiguration, RegionExitingConfiguration, SceneChangeConfiguration, SceneChangeTriggerConfiguration, SetStorageQuotaOptions, TimeConfiguration, FaceDetectionConfiguration } from './types.js';
+import { Capabilities, DefocusConfiguration, DefocusTriggerConfiguration, DeviceInformation, FieldDetectionConfiguration, FieldDetectionRegion, Hdd, ImageQualityConfiguration, ScheduleConfiguration, LineCrossingConfiguration, OverlayConfiguration, RecordingScheduleConfiguration, RegionEntranceConfiguration, RegionExitingConfiguration, SceneChangeConfiguration, SceneChangeTriggerConfiguration, SetStorageQuotaOptions, TimeConfiguration, FaceDetectionConfiguration, LPRConfiguration } from './types.js';
 import { parseBoolean, parseDimension } from './utils.js';
 
 export class HikvisionDevice extends BaseDevice {
@@ -1637,6 +1637,344 @@ export class HikvisionDevice extends BaseDevice {
 
                 const updateEndpointsRes = this.xmlParser.parse(await updateEndpointsResp.text());
                 if (Number(updateEndpointsRes?.ResponseStatus?.statusCode) !== 1 || updateEndpointsRes?.ResponseStatus?.subStatusCode !== 'ok') {
+                    throw new HttpRequestError();
+                }
+            }
+        }
+    }
+
+    public async setLPRConfiguration(configuration: LPRConfiguration) {
+        if (configuration.uploadData) {
+            const res = await this.getDigestClient().fetch(
+                this.buildURL('/ISAPI/ITC/TriggerMode/TPS'),
+                {
+                    signal: this.timeoutSignal
+                }
+            );
+
+            if (res.status !== 200) {
+                throw new HttpRequestError();
+            }
+
+            const applicationModeConfig = this.xmlParser.parse(await res.text());
+            if (applicationModeConfig.TPS.enRealtimeDataUpload !== configuration.uploadData.uploadRealTimeData
+                || applicationModeConfig.TPS.enStatisticalDataUpload !== configuration.uploadData.uploadStatisticsData
+                || applicationModeConfig.TPS.posEnable !== configuration.uploadData.uploadPositionData
+            ) {
+                applicationModeConfig.TPS.enRealtimeDataUpload = configuration.uploadData.uploadRealTimeData;
+                applicationModeConfig.TPS.enStatisticalDataUpload = configuration.uploadData.uploadStatisticsData;
+                applicationModeConfig.TPS.posEnable = configuration.uploadData.uploadPositionData;
+
+                const updateRes = await this.getDigestClient().fetch(
+                    this.buildURL('/ISAPI/ITC/TriggerMode/TPS'),
+                    {
+                        method: 'put',
+                        headers: {
+                            'content-type': 'application/xml',
+                        },
+                        body: this.xmlBuilder.build(applicationModeConfig),
+                        signal: this.timeoutSignal
+                    }
+                );
+
+                if (updateRes.status !== 200) {
+                    throw new HttpRequestError();
+                }
+
+                const updateResp = this.xmlParser.parse(await updateRes.text());
+                if (Number(updateResp?.ResponseStatus?.statusCode) !== 1 || updateResp?.ResponseStatus?.subStatusCode !== 'ok') {
+                    throw new HttpRequestError();
+                }
+            }
+        }
+
+        if (configuration.captureSettings) {
+            const captureParamsRes = await this.getDigestClient().fetch(
+                this.buildURL('/ISAPI/ITC/plateRecognitionParam'),
+                {
+                    signal: this.timeoutSignal
+                }
+            );
+
+            if (captureParamsRes.status !== 200) {
+                throw new HttpRequestError();
+            }
+
+            const captureParamsResConfig = this.xmlParser.parse(await captureParamsRes.text());
+            if (String(captureParamsResConfig.PlateRecognitionParam.countryIndex) != String(configuration.captureSettings.countryIndex)) {
+                captureParamsResConfig.PlateRecognitionParam.countryIndex = String(configuration.captureSettings.countryIndex);
+
+                const updateRes = await this.getDigestClient().fetch(
+                    this.buildURL('/ISAPI/ITC/plateRecognitionParam'),
+                    {
+                        method: 'put',
+                        headers: {
+                            'content-type': 'application/xml',
+                        },
+                        body: this.xmlBuilder.build(captureParamsResConfig),
+                        signal: this.timeoutSignal
+                    }
+                );
+
+                if (updateRes.status !== 200) {
+                    throw new HttpRequestError();
+                }
+
+                const updateResp = this.xmlParser.parse(await updateRes.text());
+                if (Number(updateResp?.ResponseStatus?.statusCode) !== 1 || updateResp?.ResponseStatus?.subStatusCode !== 'ok') {
+                    throw new HttpRequestError();
+                }
+            }
+        }
+
+        if (configuration.vehicleDetectionFeatures) {
+            const vehicleFeatureRes = await this.getDigestClient().fetch(
+                this.buildURL('/ISAPI/ITC/carFeatureParam'),
+                {
+                    signal: this.timeoutSignal
+                }
+            );
+
+            if (vehicleFeatureRes.status !== 200) {
+                throw new HttpRequestError();
+            }
+
+            const vehicleFeatureConfig = this.xmlParser.parse(await vehicleFeatureRes.text());
+            if (vehicleFeatureConfig.CarFeatureParam.safetyBeltEnabled !== configuration.vehicleDetectionFeatures.safetyBeltDetection
+                || vehicleFeatureConfig.CarFeatureParam.callEnabled !== configuration.vehicleDetectionFeatures.phoneCallDetection
+                || vehicleFeatureConfig.CarFeatureParam.helmetEnabled !== configuration.vehicleDetectionFeatures.helmetDetection
+            ) {
+                vehicleFeatureConfig.CarFeatureParam.safetyBeltEnabled = configuration.vehicleDetectionFeatures.safetyBeltDetection;
+                vehicleFeatureConfig.CarFeatureParam.callEnabled = configuration.vehicleDetectionFeatures.phoneCallDetection;
+                vehicleFeatureConfig.CarFeatureParam.helmetEnabled = configuration.vehicleDetectionFeatures.helmetDetection;
+
+                const updateRes = await this.getDigestClient().fetch(
+                    this.buildURL('/ISAPI/ITC/carFeatureParam'),
+                    {
+                        method: 'put',
+                        headers: {
+                            'content-type': 'application/xml',
+                        },
+                        body: this.xmlBuilder.build(vehicleFeatureConfig),
+                        signal: this.timeoutSignal
+                    }
+                );
+
+                if (updateRes.status !== 200) {
+                    throw new HttpRequestError();
+                }
+
+                const updateResp = this.xmlParser.parse(await updateRes.text());
+                if (Number(updateResp?.ResponseStatus?.statusCode) !== 1 || updateResp?.ResponseStatus?.subStatusCode !== 'ok') {
+                    throw new HttpRequestError();
+                }
+            }
+        }
+
+        if (configuration.imageQualitySettings) {
+            const encodeRes = await this.getDigestClient().fetch(
+                this.buildURL('/ISAPI/ITC/Snapshot/channels/1/capResInfo'),
+                {
+                    signal: this.timeoutSignal
+                }
+            );
+
+            if (encodeRes.status !== 200) {
+                throw new HttpRequestError();
+            }
+
+            const encodeConfig = this.xmlParser.parse(await encodeRes.text());
+            if (encodeConfig.CapResolution.capResolutionWidth !== configuration.imageQualitySettings.resolution.width
+                || encodeConfig.CapResolution.capResolutionHeight !== configuration.imageQualitySettings.resolution.height
+            ) {
+                encodeConfig.CapResolution.capResolutionWidth = configuration.imageQualitySettings.resolution.width;
+                encodeConfig.CapResolution.capResolutionHeight = configuration.imageQualitySettings.resolution.height;
+
+                const updateRes = await this.getDigestClient().fetch(
+                    this.buildURL('/ISAPI/ITC/Snapshot/channels/1/capResInfo'),
+                    {
+                        method: 'put',
+                        headers: {
+                            'content-type': 'application/xml',
+                        },
+                        body: this.xmlBuilder.build(encodeConfig),
+                        signal: this.timeoutSignal
+                    }
+                );
+
+                if (updateRes.status !== 200) {
+                    throw new HttpRequestError();
+                }
+
+                const updateResp = this.xmlParser.parse(await updateRes.text());
+                if (Number(updateResp?.ResponseStatus?.statusCode) !== 1 || updateResp?.ResponseStatus?.subStatusCode !== 'ok') {
+                    throw new HttpRequestError();
+                }
+            }
+        }
+
+        if (configuration.schedules && configuration.schedules.length > 0) {
+            const recordingScheduleRes = await this.getDigestClient().fetch(
+                this.buildURL('/ISAPI/ITC/illegalSchedules?format=json'),
+                {
+                    signal: this.timeoutSignal
+                }
+            );
+
+            if (recordingScheduleRes.status !== 200) {
+                throw new HttpRequestError();
+            }
+
+            const recordingScheduleConfig = await recordingScheduleRes.json();
+
+            for (const newSchedule of configuration.schedules) {
+                const existingSchedule = recordingScheduleConfig?.IllegalScheduleList?.find((schedule: { Schedule: { eventType: string; }; }) => schedule.Schedule.eventType === newSchedule.eventType);
+                if (!existingSchedule) {
+                    throw new MissingConfigurationError();
+                }
+
+                existingSchedule.Schedule.TimeBlockList = [
+                    {
+                        TimeBlock: {
+                            dayOfWeek: 1,
+                            TimeRangeList: [{ TimeRange: { beginTime: newSchedule.schedule.monday.start, endTime: newSchedule.schedule.monday.end } }]
+                        },
+                    }, {
+                        TimeBlock: {
+                            dayOfWeek: 2,
+                            TimeRangeList: [{ TimeRange: { beginTime: newSchedule.schedule.tuesday.start, endTime: newSchedule.schedule.tuesday.end } }]
+                        },
+                    }, {
+                        TimeBlock: {
+                            dayOfWeek: 3,
+                            TimeRangeList: [{ TimeRange: { beginTime: newSchedule.schedule.wednesday.start, endTime: newSchedule.schedule.wednesday.end } }]
+                        },
+                    }, {
+                        TimeBlock: {
+                            dayOfWeek: 4,
+                            TimeRangeList: [{ TimeRange: { beginTime: newSchedule.schedule.thursday.start, endTime: newSchedule.schedule.thursday.end } }]
+                        },
+                    }, {
+                        TimeBlock: {
+                            dayOfWeek: 5,
+                            TimeRangeList: [{ TimeRange: { beginTime: newSchedule.schedule.friday.start, endTime: newSchedule.schedule.friday.end } }]
+                        },
+                    }, {
+                        TimeBlock: {
+                            dayOfWeek: 6,
+                            TimeRangeList: [{ TimeRange: { beginTime: newSchedule.schedule.saturday.start, endTime: newSchedule.schedule.saturday.end } }]
+                        },
+                    }, {
+                        TimeBlock: {
+                            dayOfWeek: 7,
+                            TimeRangeList: [{ TimeRange: { beginTime: newSchedule.schedule.sunday.start, endTime: newSchedule.schedule.sunday.end } }]
+                        },
+                    },
+                ];
+            }
+
+            const updateRes = await this.getDigestClient().fetch(
+                this.buildURL('/ISAPI/ITC/illegalSchedules?format=json'),
+                {
+                    method: 'put',
+                    headers: {
+                        'content-type': 'application/json',
+                    },
+                    body: JSON.stringify(recordingScheduleConfig),
+                    signal: this.timeoutSignal
+                }
+            );
+
+            if (updateRes.status !== 200) {
+                throw new HttpRequestError();
+            }
+
+            const updateResp = await updateRes.json();
+            if (Number(updateResp.statusCode) !== 1 || updateResp.subStatusCode !== 'ok') {
+                throw new HttpRequestError();
+            }
+        }
+
+        if (configuration.webhookNotification && configuration.webhookNotification.length > 0) {
+            for (const webhook of configuration.webhookNotification) {
+                const updateRes = await this.getDigestClient().fetch(
+                    this.buildURL('/ISAPI/Event/notification/httpHosts'),
+                    {
+                        method: 'put',
+                        headers: {
+                            'content-type': 'application/xml',
+                        },
+                        body: this.xmlBuilder.build({
+                            '?xml': { '@_encoding': 'UTF-8' },
+                            HttpHostNotificationList: {
+                                HttpHostNotification: {
+                                    id: webhook.id,
+                                    enabled: true,
+                                    protocolType: webhook.protocol.toUpperCase(),
+                                    hostName: webhook.host,
+                                    url: webhook.path,
+                                    portNo: webhook.port,
+                                    parameterFormatType: 'XML',
+                                    addressingFormatType: 'hostname',
+                                    httpBroken: false,
+                                    httpAuthenticationMethod: 'none',
+                                    ANPR: { detectionUpLoadPicturesType: 'all' },
+                                    SubscribeEvent: { heartbeat: 0, eventMode: 'all' },
+                                }
+                            }
+                        }),
+                        signal: this.timeoutSignal
+                    }
+                );
+
+                if (updateRes.status !== 200) {
+                    throw new HttpRequestError();
+                }
+
+                const updateResp = this.xmlParser.parse(await updateRes.text());
+                if (Number(updateResp?.ResponseStatus?.statusCode) !== 1 || updateResp?.ResponseStatus?.subStatusCode !== 'ok') {
+                    throw new HttpRequestError();
+                }
+            }
+        }
+
+        if (configuration.imageUploadOptions) {
+            const binaryImageUploadRes = await this.getDigestClient().fetch(
+                this.buildURL('/ISAPI/Intelligent/channels/1/mixedTargetDetection?format=json'),
+                {
+                    signal: this.timeoutSignal
+                }
+            );
+
+            if (binaryImageUploadRes.status !== 200) {
+                throw new HttpRequestError();
+            }
+
+            const binaryImageUploadConfig = await binaryImageUploadRes.json();
+            if (binaryImageUploadConfig.MixedTargetDetection.isSupportBinaryPicUp !== configuration.imageUploadOptions.uploadBinaryImage
+                || binaryImageUploadConfig.MixedTargetDetection.convertBinToBmpEnabled !== configuration.imageUploadOptions.convertBinaryToBitmap
+            ) {
+                binaryImageUploadConfig.MixedTargetDetection.isSupportBinaryPicUp = String(configuration.imageUploadOptions.uploadBinaryImage);
+                binaryImageUploadConfig.MixedTargetDetection.convertBinToBmpEnabled = configuration.imageUploadOptions.convertBinaryToBitmap;
+
+                const updateRes = await this.getDigestClient().fetch(
+                    this.buildURL('/ISAPI/Intelligent/channels/1/mixedTargetDetection?format=json'),
+                    {
+                        method: 'put',
+                        headers: {
+                            'content-type': 'application/json',
+                        },
+                        body: JSON.stringify(binaryImageUploadConfig),
+                        signal: this.timeoutSignal
+                    }
+                );
+
+                if (updateRes.status !== 200) {
+                    throw new HttpRequestError();
+                }
+
+                const updateResp = await updateRes.json();
+                if (Number(updateResp.statusCode) !== 1 || updateResp.subStatusCode !== 'ok') {
                     throw new HttpRequestError();
                 }
             }
