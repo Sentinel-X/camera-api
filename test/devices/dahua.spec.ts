@@ -1141,4 +1141,242 @@ describe('DahuaDevice', () => {
             expect(error).to.be.instanceOf(HttpRequestError);
         }
     });
+
+    it('updates invasion area configuration and enables webhook upload', async () => {
+        const globalPayload = [
+            'table.VideoAnalyseGlobal[0].Scene.Type=FaceAnalysis'
+        ].join('\n');
+
+        const rulePayload = [
+            'table.VideoAnalyseRule[0][0].Class=Normal',
+            'table.VideoAnalyseRule[0][0].Type=CrossRegionDetection',
+            'table.VideoAnalyseRule[0][0].Enable=false',
+            'table.VideoAnalyseRule[0][0].Name=Old Rule',
+            'table.VideoAnalyseRule[0][0].EventHandler.SnapshotEnable=false',
+            'table.VideoAnalyseRule[0][0].EventHandler.SnapshotTitleEnable=false',
+            'table.VideoAnalyseRule[0][0].EventHandler.SnapshotPeriod=0',
+            'table.VideoAnalyseRule[0][0].EventHandler.SnapshotTimes=1',
+            'table.VideoAnalyseRule[0][0].ObjectTypes[0]=Human'
+        ].join('\n');
+
+        const pictureHttpUploadPayload = [
+            'table.PictureHttpUpload.Enable=false'
+        ].join('\n');
+
+        nock('http://camera.test:80')
+            .get('/cgi-bin/configManager.cgi')
+            .query({ action: 'getConfig', name: 'VideoAnalyseGlobal' })
+            .reply(200, globalPayload);
+
+        nock('http://camera.test:80')
+            .get('/cgi-bin/configManager.cgi')
+            .query({
+                action: 'setConfig',
+                'VideoAnalyseGlobal[0].Scene.Type': 'Normal'
+            })
+            .reply(200, 'OK');
+
+        nock('http://camera.test:80')
+            .get('/cgi-bin/configManager.cgi')
+            .query({ action: 'getConfig', name: 'VideoAnalyseRule' })
+            .reply(200, rulePayload);
+
+        nock('http://camera.test:80')
+            .get('/cgi-bin/configManager.cgi')
+            .query({
+                action: 'addConfig',
+                'VideoAnalyseRule[0][0].ObjectTypes[1]': 'Vehicle',
+            })
+            .reply(200, 'OK');
+
+        nock('http://camera.test:80')
+            .get('/cgi-bin/configManager.cgi')
+            .query({
+                action: 'setConfig',
+                'VideoAnalyseRule[0][0].Enable': 'true',
+                'VideoAnalyseRule[0][0].Name': 'Invasion Area',
+                'VideoAnalyseRule[0][0].EventHandler.SnapshotEnable': 'true',
+                'VideoAnalyseRule[0][0].EventHandler.SnapshotTitleEnable': 'true',
+                'VideoAnalyseRule[0][0].EventHandler.SnapshotPeriod': '5',
+                'VideoAnalyseRule[0][0].EventHandler.SnapshotTimes': '2'
+            })
+            .reply(200, 'OK');
+
+        nock('http://camera.test:80')
+            .get('/cgi-bin/configManager.cgi')
+            .query({ action: 'getConfig', name: 'PictureHttpUpload' })
+            .reply(200, pictureHttpUploadPayload);
+
+        nock('http://camera.test:80')
+            .get('/cgi-bin/configManager.cgi')
+            .query({
+                action: 'addConfig',
+                'PictureHttpUpload.Enable': 'true',
+                'PictureHttpUpload.UploadServerList[0].Address': '127.0.0.1',
+                'PictureHttpUpload.UploadServerList[0].EventType[0]': 'CrossRegionDetection',
+                'PictureHttpUpload.UploadServerList[0].Port': '8080',
+                'PictureHttpUpload.UploadServerList[0].Uploadpath': '/webhooks/invasion-area'
+            })
+            .reply(200, 'OK');
+
+        const device = new DahuaDevice(defaultConfig);
+
+        await device.setInvasionAreaConfiguration({
+            enabled: true,
+            ruleName: 'Invasion Area',
+            snapshotEnabled: true,
+            snapshotTitleEnabled: true,
+            snapshotInterval: 5,
+            snapshotTimes: 2,
+            objectTypes: ['human', 'vehicle'],
+            webhookConfiguration: {
+                enabled: true,
+                address: '127.0.0.1',
+                port: 8080,
+                path: '/webhooks/invasion-area'
+            }
+        });
+    });
+
+    it('does not call setConfig when invasion area configuration is already up to date', async () => {
+        const globalPayload = [
+            'table.VideoAnalyseGlobal[0].Scene.Type=Normal'
+        ].join('\n');
+
+        const rulePayload = [
+            'table.VideoAnalyseRule[0][0].Class=Normal',
+            'table.VideoAnalyseRule[0][0].Type=CrossRegionDetection',
+            'table.VideoAnalyseRule[0][0].Enable=true',
+            'table.VideoAnalyseRule[0][0].Name=Invasion Area',
+            'table.VideoAnalyseRule[0][0].EventHandler.SnapshotEnable=true',
+            'table.VideoAnalyseRule[0][0].EventHandler.SnapshotTitleEnable=true',
+            'table.VideoAnalyseRule[0][0].EventHandler.SnapshotPeriod=5',
+            'table.VideoAnalyseRule[0][0].EventHandler.SnapshotTimes=2',
+            'table.VideoAnalyseRule[0][0].ObjectTypes[0]=Human'
+        ].join('\n') + '\n';
+
+        nock('http://camera.test:80')
+            .get('/cgi-bin/configManager.cgi')
+            .query({ action: 'getConfig', name: 'VideoAnalyseGlobal' })
+            .reply(200, globalPayload);
+
+        nock('http://camera.test:80')
+            .get('/cgi-bin/configManager.cgi')
+            .query({ action: 'getConfig', name: 'VideoAnalyseRule' })
+            .reply(200, rulePayload);
+
+        const device = new DahuaDevice(defaultConfig);
+
+        await device.setInvasionAreaConfiguration({
+            enabled: true,
+            ruleName: 'Invasion Area',
+            snapshotEnabled: true,
+            snapshotTitleEnabled: true,
+            snapshotInterval: 5,
+            snapshotTimes: 2,
+            objectTypes: ['human']
+        });
+    });
+
+    it('disables invasion area configuration when enabled is false', async () => {
+        const globalPayload = [
+            'table.VideoAnalyseGlobal[0].Scene.Type=Normal'
+        ].join('\n');
+
+        nock('http://camera.test:80')
+            .get('/cgi-bin/configManager.cgi')
+            .query({ action: 'getConfig', name: 'VideoAnalyseGlobal' })
+            .reply(200, globalPayload);
+
+        nock('http://camera.test:80')
+            .get('/cgi-bin/configManager.cgi')
+            .query({
+                action: 'setConfig',
+                'VideoAnalyseGlobal[0].Scene.Type': ''
+            })
+            .reply(200, 'OK');
+
+        const device = new DahuaDevice(defaultConfig);
+
+        await device.setInvasionAreaConfiguration({
+            enabled: false,
+            ruleName: 'Invasion Area',
+            snapshotEnabled: false,
+            snapshotTitleEnabled: false,
+            snapshotInterval: 0,
+            snapshotTimes: 1,
+            objectTypes: ['human']
+        });
+    });
+
+    it('throws MissingConfigurationError when invasion area rule is absent', async () => {
+        const globalPayload = [
+            'table.VideoAnalyseGlobal[0].Scene.Type=Normal'
+        ].join('\n');
+
+        const rulePayload = [
+            'table.VideoAnalyseRule[0][0].Class=Normal',
+            'table.VideoAnalyseRule[0][0].Type=Tripwire'
+        ].join('\n');
+
+        nock('http://camera.test:80')
+            .get('/cgi-bin/configManager.cgi')
+            .query({ action: 'getConfig', name: 'VideoAnalyseGlobal' })
+            .reply(200, globalPayload);
+
+        nock('http://camera.test:80')
+            .get('/cgi-bin/configManager.cgi')
+            .query({ action: 'getConfig', name: 'VideoAnalyseRule' })
+            .reply(200, rulePayload);
+
+        const device = new DahuaDevice(defaultConfig);
+
+        try {
+            await device.setInvasionAreaConfiguration({
+                enabled: true,
+                ruleName: 'Invasion Area',
+                snapshotEnabled: true,
+                snapshotTitleEnabled: true,
+                snapshotInterval: 5,
+                snapshotTimes: 2,
+                objectTypes: ['human']
+            });
+            expect.fail('Function should have thrown');
+        } catch (error) {
+            expect(error).to.be.instanceOf(MissingConfigurationError);
+        }
+    });
+
+    it('throws HttpRequestError when invasion area global setConfig returns non-ok response', async () => {
+        const globalPayload = [
+            'table.VideoAnalyseGlobal[0].Scene.Type=FaceAnalysis'
+        ].join('\n');
+
+        nock('http://camera.test:80')
+            .get('/cgi-bin/configManager.cgi')
+            .query({ action: 'getConfig', name: 'VideoAnalyseGlobal' })
+            .reply(200, globalPayload);
+
+        nock('http://camera.test:80')
+            .get('/cgi-bin/configManager.cgi')
+            .query((queryObject) => queryObject.action === 'setConfig' && queryObject['VideoAnalyseGlobal[0].Scene.Type'] === 'Normal')
+            .reply(200, 'error');
+
+        const device = new DahuaDevice(defaultConfig);
+
+        try {
+            await device.setInvasionAreaConfiguration({
+                enabled: true,
+                ruleName: 'Invasion Area',
+                snapshotEnabled: true,
+                snapshotTitleEnabled: true,
+                snapshotInterval: 5,
+                snapshotTimes: 2,
+                objectTypes: ['human']
+            });
+            expect.fail('Function should have thrown');
+        } catch (error) {
+            expect(error).to.be.instanceOf(HttpRequestError);
+        }
+    });
 });

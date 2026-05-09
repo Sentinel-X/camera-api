@@ -96,3 +96,19 @@ export type SceneChangeConfiguration = {
     alarmEnabled: boolean;
     alarmDelayTime: number; // in seconds
 };
+
+export type InvasionAreaConfiguration = {
+    enabled: boolean;
+    ruleName: string;
+    snapshotEnabled: boolean;
+    snapshotTitleEnabled: boolean;
+    snapshotInterval: number;
+    snapshotTimes: number;
+    objectTypes: ('human' | 'vehicle')[];
+    webhookConfiguration?: {
+        enabled: boolean;
+        address: string;
+        port: number;
+        path: string;
+    };
+};
