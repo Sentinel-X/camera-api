@@ -1379,4 +1379,291 @@ describe('DahuaDevice', () => {
             expect(error).to.be.instanceOf(HttpRequestError);
         }
     });
+
+    it('updates face detection configuration and enables webhook upload', async () => {
+        const globalPayload = [
+            'table.VideoAnalyseGlobal[0].Scene.Type=Normal'
+        ].join('\n');
+
+        const rulePayload = [
+            'table.VideoAnalyseRule[0][0].Class=FaceDetection',
+            'table.VideoAnalyseRule[0][0].Type=FaceDetection',
+            'table.VideoAnalyseRule[0][0].Enable=false',
+            'table.VideoAnalyseRule[0][0].Config.FeatureEnable=false',
+            'table.VideoAnalyseRule[0][0].Config.FaceBeautification.Enable=false',
+            'table.VideoAnalyseRule[0][0].Config.FaceBeautification.BeautyLevel=50',
+            'table.VideoAnalyseRule[0][0].EventHandler.SnapshotEnable=false',
+            'table.VideoAnalyseRule[0][0].EventHandler.SnapshotTitleEnable=false',
+            'table.VideoAnalyseRule[0][0].EventHandler.SnapshotPeriod=0',
+            'table.VideoAnalyseRule[0][0].EventHandler.SnapshotTimes=1'
+        ].join('\n');
+
+        const faceSnapshotPayload = [
+            'table.FaceSnapshot[0].SnapPolicy=Realtime',
+            'table.FaceSnapshot[0].CutoutPolicy=Original'
+        ].join('\n');
+
+        const faceEnhancementPayload = [
+            'table.VideoEncodeROI[0].DynamicTrack=false'
+        ].join('\n');
+
+        const pictureHttpUploadPayload = [
+            'table.PictureHttpUpload.Enable=false'
+        ].join('\n');
+
+        nock('http://camera.test:80')
+            .get('/cgi-bin/configManager.cgi')
+            .query({ action: 'getConfig', name: 'VideoAnalyseGlobal' })
+            .reply(200, globalPayload);
+
+        nock('http://camera.test:80')
+            .get('/cgi-bin/configManager.cgi')
+            .query({
+                action: 'setConfig',
+                'VideoAnalyseGlobal[0].Scene.Type': 'FaceDetection'
+            })
+            .reply(200, 'OK');
+
+        nock('http://camera.test:80')
+            .get('/cgi-bin/configManager.cgi')
+            .query({ action: 'getConfig', name: 'VideoAnalyseRule' })
+            .reply(200, rulePayload);
+
+        nock('http://camera.test:80')
+            .get('/cgi-bin/configManager.cgi')
+            .query({
+                action: 'setConfig',
+                'VideoAnalyseRule[0][0].Enable': 'true',
+                'VideoAnalyseRule[0][0].Config.FeatureEnable': 'true',
+                'VideoAnalyseRule[0][0].Config.FaceBeautification.Enable': 'true',
+                'VideoAnalyseRule[0][0].Config.FaceBeautification.BeautyLevel': '80',
+                'VideoAnalyseRule[0][0].EventHandler.SnapshotEnable': 'true',
+                'VideoAnalyseRule[0][0].EventHandler.SnapshotTitleEnable': 'true',
+                'VideoAnalyseRule[0][0].EventHandler.SnapshotPeriod': '5',
+                'VideoAnalyseRule[0][0].EventHandler.SnapshotTimes': '2'
+            })
+            .reply(200, 'OK');
+
+        nock('http://camera.test:80')
+            .get('/cgi-bin/configManager.cgi')
+            .query({ action: 'getConfig', name: 'FaceSnapshot' })
+            .reply(200, faceSnapshotPayload);
+
+        nock('http://camera.test:80')
+            .get('/cgi-bin/configManager.cgi')
+            .query({
+                action: 'setConfig',
+                'FaceSnapshot[0].SnapPolicy': 'Quality',
+                'FaceSnapshot[0].CutoutPolicy': 'Cephalothorax'
+            })
+            .reply(200, 'OK');
+
+        nock('http://camera.test:80')
+            .get('/cgi-bin/configManager.cgi')
+            .query({ action: 'getConfig', name: 'VideoEncodeROI' })
+            .reply(200, faceEnhancementPayload);
+
+        nock('http://camera.test:80')
+            .get('/cgi-bin/configManager.cgi')
+            .query({
+                action: 'setConfig',
+                'VideoEncodeROI[0].DynamicTrack': 'true'
+            })
+            .reply(200, 'OK');
+
+        nock('http://camera.test:80')
+            .get('/cgi-bin/configManager.cgi')
+            .query({ action: 'getConfig', name: 'PictureHttpUpload' })
+            .reply(200, pictureHttpUploadPayload);
+
+        nock('http://camera.test:80')
+            .get('/cgi-bin/configManager.cgi')
+            .query({
+                action: 'addConfig',
+                'PictureHttpUpload.Enable': 'true',
+                'PictureHttpUpload.UploadServerList[0].Address': '127.0.0.1',
+                'PictureHttpUpload.UploadServerList[0].EventType[0]': 'FaceDetection',
+                'PictureHttpUpload.UploadServerList[0].Port': '8080',
+                'PictureHttpUpload.UploadServerList[0].Uploadpath': '/webhooks/face-detection'
+            })
+            .reply(200, 'OK');
+
+        const device = new DahuaDevice(defaultConfig);
+
+        await device.setFaceDetectionConfiguration({
+            enabled: true,
+            property: true,
+            faceBeautification: {
+                enabled: true,
+                level: 80
+            },
+            snapshotEnabled: true,
+            snapshotTitleEnabled: true,
+            snapshotInterval: 5,
+            snapshotTimes: 2,
+            faceSnapshotConfig: {
+                qualityPolicy: 'quality',
+                cutoutPolicy: 'cephalothorax'
+            },
+            faceEnhancementConfig: {
+                enabled: true
+            },
+            webhookConfiguration: {
+                enabled: true,
+                address: '127.0.0.1',
+                port: 8080,
+                path: '/webhooks/face-detection'
+            }
+        });
+    });
+
+    it('does not call setConfig when face detection configuration is already up to date', async () => {
+        const globalPayload = [
+            'table.VideoAnalyseGlobal[0].Scene.Type=FaceDetection'
+        ].join('\n');
+
+        const rulePayload = [
+            'table.VideoAnalyseRule[0][0].Class=FaceDetection',
+            'table.VideoAnalyseRule[0][0].Type=FaceDetection',
+            'table.VideoAnalyseRule[0][0].Enable=true',
+            'table.VideoAnalyseRule[0][0].Config.FeatureEnable=true',
+            'table.VideoAnalyseRule[0][0].Config.FaceBeautification.Enable=false',
+            'table.VideoAnalyseRule[0][0].EventHandler.SnapshotEnable=true',
+            'table.VideoAnalyseRule[0][0].EventHandler.SnapshotTitleEnable=true',
+            'table.VideoAnalyseRule[0][0].EventHandler.SnapshotPeriod=5',
+            'table.VideoAnalyseRule[0][0].EventHandler.SnapshotTimes=2'
+        ].join('\n') + '\n';
+
+        nock('http://camera.test:80')
+            .get('/cgi-bin/configManager.cgi')
+            .query({ action: 'getConfig', name: 'VideoAnalyseGlobal' })
+            .reply(200, globalPayload);
+
+        nock('http://camera.test:80')
+            .get('/cgi-bin/configManager.cgi')
+            .query({ action: 'getConfig', name: 'VideoAnalyseRule' })
+            .reply(200, rulePayload);
+
+        const device = new DahuaDevice(defaultConfig);
+
+        await device.setFaceDetectionConfiguration({
+            enabled: true,
+            property: true,
+            faceBeautification: {
+                enabled: false
+            },
+            snapshotEnabled: true,
+            snapshotTitleEnabled: true,
+            snapshotInterval: 5,
+            snapshotTimes: 2
+        });
+    });
+
+    it('disables face detection configuration when enabled is false', async () => {
+        const globalPayload = [
+            'table.VideoAnalyseGlobal[0].Scene.Type=FaceDetection'
+        ].join('\n');
+
+        nock('http://camera.test:80')
+            .get('/cgi-bin/configManager.cgi')
+            .query({ action: 'getConfig', name: 'VideoAnalyseGlobal' })
+            .reply(200, globalPayload);
+
+        nock('http://camera.test:80')
+            .get('/cgi-bin/configManager.cgi')
+            .query({
+                action: 'setConfig',
+                'VideoAnalyseGlobal[0].Scene.Type': ''
+            })
+            .reply(200, 'OK');
+
+        const device = new DahuaDevice(defaultConfig);
+
+        await device.setFaceDetectionConfiguration({
+            enabled: false,
+            property: false,
+            faceBeautification: {
+                enabled: false
+            },
+            snapshotEnabled: false,
+            snapshotTitleEnabled: false,
+            snapshotInterval: 0,
+            snapshotTimes: 1
+        });
+    });
+
+    it('throws MissingConfigurationError when face detection rule is absent', async () => {
+        const globalPayload = [
+            'table.VideoAnalyseGlobal[0].Scene.Type=FaceDetection'
+        ].join('\n');
+
+        const rulePayload = [
+            'table.VideoAnalyseRule[0][0].Class=FaceDetection',
+            'table.VideoAnalyseRule[0][0].Type=Tripwire'
+        ].join('\n');
+
+        nock('http://camera.test:80')
+            .get('/cgi-bin/configManager.cgi')
+            .query({ action: 'getConfig', name: 'VideoAnalyseGlobal' })
+            .reply(200, globalPayload);
+
+        nock('http://camera.test:80')
+            .get('/cgi-bin/configManager.cgi')
+            .query({ action: 'getConfig', name: 'VideoAnalyseRule' })
+            .reply(200, rulePayload);
+
+        const device = new DahuaDevice(defaultConfig);
+
+        try {
+            await device.setFaceDetectionConfiguration({
+                enabled: true,
+                property: true,
+                faceBeautification: {
+                    enabled: false
+                },
+                snapshotEnabled: true,
+                snapshotTitleEnabled: true,
+                snapshotInterval: 5,
+                snapshotTimes: 2
+            });
+            expect.fail('Function should have thrown');
+        } catch (error) {
+            expect(error).to.be.instanceOf(MissingConfigurationError);
+        }
+    });
+
+    it('throws HttpRequestError when face detection global setConfig returns non-ok response', async () => {
+        const globalPayload = [
+            'table.VideoAnalyseGlobal[0].Scene.Type=Normal'
+        ].join('\n');
+
+        nock('http://camera.test:80')
+            .get('/cgi-bin/configManager.cgi')
+            .query({ action: 'getConfig', name: 'VideoAnalyseGlobal' })
+            .reply(200, globalPayload);
+
+        nock('http://camera.test:80')
+            .get('/cgi-bin/configManager.cgi')
+            .query((queryObject) => queryObject.action === 'setConfig' && queryObject['VideoAnalyseGlobal[0].Scene.Type'] === 'FaceDetection')
+            .reply(200, 'error');
+
+        const device = new DahuaDevice(defaultConfig);
+
+        try {
+            await device.setFaceDetectionConfiguration({
+                enabled: true,
+                property: true,
+                faceBeautification: {
+                    enabled: false
+                },
+                snapshotEnabled: true,
+                snapshotTitleEnabled: true,
+                snapshotInterval: 5,
+                snapshotTimes: 2
+            });
+            expect.fail('Function should have thrown');
+        } catch (error) {
+            expect(error).to.be.instanceOf(HttpRequestError);
+        }
+    });
 });
