@@ -3,12 +3,12 @@ import moment from 'moment-timezone';
 import { HttpRequestError, MissingConfigurationError, NotImplementedError } from '../../errors.js';
 import { InvasionAreaCoordinate } from '../../types.js';
 import { BaseDevice } from '../base.js';
-import { DddnsConfiguration, DefocusConfiguration, ImageQualityConfiguration, InvasionAreaConfiguration, InvasionAreaPoint, OverlayConfiguration, SceneChangeConfiguration, TimeConfiguration, VideoTamperingConfiguration } from './types.js';
+import { DddnsConfiguration, DefocusConfiguration, FaceDetectionConfiguration, ImageQualityConfiguration, InvasionAreaConfiguration, InvasionAreaPoint, OverlayConfiguration, SceneChangeConfiguration, TimeConfiguration, VideoTamperingConfiguration } from './types.js';
 import { timezones } from './constants.js';
 
 export class DahuaDevice extends BaseDevice {
     async getInvasionAreaCoordinates(): Promise<InvasionAreaCoordinate[]> {
-        const { ruleConfig, ruleNumber } = await this.getAreaInvasionRule();
+        const { ruleConfig, ruleNumber } = await this.getRule('Normal', 'CrossRegionDetection');
 
         const hasAreaCoordinate = ruleConfig.includes(`table.VideoAnalyseRule[0][${ruleNumber}].Config.DetectRegion`);
         if (!hasAreaCoordinate) {
@@ -81,7 +81,7 @@ export class DahuaDevice extends BaseDevice {
     }
 
     async setInvasionAreaCoordinates(coordinates: InvasionAreaCoordinate[]) {
-        const { ruleConfig, ruleNumber } = await this.getAreaInvasionRule();
+        const { ruleConfig, ruleNumber } = await this.getRule('Normal', 'CrossRegionDetection');
 
         await this.removeCurrentAreaInvasionCoordinates(ruleConfig, ruleNumber);
 
@@ -262,7 +262,10 @@ export class DahuaDevice extends BaseDevice {
         }
     }
 
-    private async getAreaInvasionRule() {
+    private async getRule(
+        className: 'Normal' | 'FaceDetection',
+        ruleName: 'FaceDetection' | 'CrossRegionDetection'
+    ): Promise<{ ruleConfig: string; ruleNumber: number }> {
         const ruleConfig = await this.getConfig('VideoAnalyseRule');
 
         let ruleNumber = -1;
@@ -272,15 +275,15 @@ export class DahuaDevice extends BaseDevice {
             }
 
             if (
-                ruleConfig.includes(`table.VideoAnalyseRule[0][${i}].Class=Normal`) &&
-                ruleConfig.includes(`table.VideoAnalyseRule[0][${i}].Type=CrossRegionDetection`)
+                ruleConfig.includes(`table.VideoAnalyseRule[0][${i}].Class=${className}`) &&
+                ruleConfig.includes(`table.VideoAnalyseRule[0][${i}].Type=${ruleName}`)
             ) {
                 ruleNumber = i;
                 break;
             }
         }
 
-        if (ruleNumber === -1 || !ruleConfig.includes(`table.VideoAnalyseRule[0][${ruleNumber}].Type=CrossRegionDetection`)) {
+        if (ruleNumber === -1 || !ruleConfig.includes(`table.VideoAnalyseRule[0][${ruleNumber}].Type=${ruleName}`)) {
             throw new MissingConfigurationError();
         }
 
@@ -617,7 +620,7 @@ export class DahuaDevice extends BaseDevice {
         }
 
         // There should be at least one rule configured as CrossRegionDetection for the invasion area to work. If there isn't we throw an error.
-        const { ruleConfig, ruleNumber } = await this.getAreaInvasionRule();
+        const { ruleConfig, ruleNumber } = await this.getRule('Normal', 'CrossRegionDetection');
         const ruleConfigQueryParams = new URLSearchParams();
 
         if (!ruleConfig.includes(`VideoAnalyseRule[0][${ruleNumber}].Enable=true`)) {
@@ -724,7 +727,175 @@ export class DahuaDevice extends BaseDevice {
                     for (let i = 1; i < 50; i++) {
                         if (pictureUploadConfig.includes(`PictureHttpUpload.UploadServerList[0].EventType[${i}]`)) {
                             await this.removeConfig('PictureHttpUpload.UploadServerList[0].EventType[1]'); // Index is always 1 because the previous one got removed.
-                            await setTimeout(5000);
+                            await setTimeout(2500);
+                        }
+                    }
+                }
+
+                if (pictureUploadQueryParams.size > 0) {
+                    await this.setConfigs(pictureUploadQueryParams);
+                }
+            }
+        }
+    }
+
+    public async setFaceDetectionConfiguration(faceDetectionConfiguration: FaceDetectionConfiguration) {
+        const globalConfigQueryParams = new URLSearchParams();
+        const globalConfig = await this.getConfig('VideoAnalyseGlobal');
+
+        if (faceDetectionConfiguration.enabled && !globalConfig.includes('VideoAnalyseGlobal[0].Scene.Type=FaceDetection')) {
+            globalConfigQueryParams.append('VideoAnalyseGlobal[0].Scene.Type', 'FaceDetection');
+        } else if (!faceDetectionConfiguration.enabled && globalConfig.includes('VideoAnalyseGlobal[0].Scene.Type=FaceDetection')) {
+            globalConfigQueryParams.append('VideoAnalyseGlobal[0].Scene.Type', '');
+        }
+
+        if (globalConfigQueryParams.size > 0) {
+            await this.setConfigs(globalConfigQueryParams);
+        }
+
+        if (!faceDetectionConfiguration.enabled) {
+            return;
+        }
+
+        // There should be at least one rule configured as FaceDetection for the face detection to work. If there isn't we throw an error.
+        const { ruleConfig, ruleNumber } = await this.getRule('FaceDetection', 'FaceDetection');
+
+        const ruleConfigQueryParams = new URLSearchParams();
+        if (!ruleConfig.includes(`VideoAnalyseRule[0][${ruleNumber}].Enable=true`)) {
+            ruleConfigQueryParams.append(`VideoAnalyseRule[0][${ruleNumber}].Enable`, 'true');
+        }
+
+        if (!ruleConfig.includes(`VideoAnalyseRule[0][${ruleNumber}].Config.FeatureEnable=${faceDetectionConfiguration.property}`)) {
+            ruleConfigQueryParams.append(`VideoAnalyseRule[0][${ruleNumber}].Config.FeatureEnable`, faceDetectionConfiguration.property.toString());
+        }
+
+        if (!ruleConfig.includes(`VideoAnalyseRule[0][${ruleNumber}].Config.FaceBeautification.Enable=${faceDetectionConfiguration.faceBeautification.enabled}`)) {
+            ruleConfigQueryParams.append(`VideoAnalyseRule[0][${ruleNumber}].Config.FaceBeautification.Enable`, faceDetectionConfiguration.faceBeautification.enabled.toString());
+        }
+
+        if (faceDetectionConfiguration.faceBeautification.enabled) {
+            if (!ruleConfig.includes(`VideoAnalyseRule[0][${ruleNumber}].Config.FaceBeautification.BeautyLevel=${faceDetectionConfiguration.faceBeautification.level}`)) {
+                ruleConfigQueryParams.append(`VideoAnalyseRule[0][${ruleNumber}].Config.FaceBeautification.BeautyLevel`, faceDetectionConfiguration.faceBeautification.level.toString());
+            }
+        }
+
+        if (!ruleConfig.includes(`VideoAnalyseRule[0][${ruleNumber}].EventHandler.SnapshotEnable=${faceDetectionConfiguration.snapshotEnabled}`)) {
+            ruleConfigQueryParams.append(`VideoAnalyseRule[0][${ruleNumber}].EventHandler.SnapshotEnable`, faceDetectionConfiguration.snapshotEnabled.toString());
+        }
+
+        if (!ruleConfig.includes(`VideoAnalyseRule[0][${ruleNumber}].EventHandler.SnapshotTitleEnable=${faceDetectionConfiguration.snapshotTitleEnabled}`)) {
+            ruleConfigQueryParams.append(`VideoAnalyseRule[0][${ruleNumber}].EventHandler.SnapshotTitleEnable`, faceDetectionConfiguration.snapshotTitleEnabled.toString());
+        }
+
+        if (!ruleConfig.includes(`VideoAnalyseRule[0][${ruleNumber}].EventHandler.SnapshotPeriod=${faceDetectionConfiguration.snapshotInterval}`)) {
+            ruleConfigQueryParams.append(`VideoAnalyseRule[0][${ruleNumber}].EventHandler.SnapshotPeriod`, faceDetectionConfiguration.snapshotInterval.toString());
+        }
+
+        if (!ruleConfig.includes(`VideoAnalyseRule[0][${ruleNumber}].EventHandler.SnapshotTimes=${faceDetectionConfiguration.snapshotTimes}`)) {
+            ruleConfigQueryParams.append(`VideoAnalyseRule[0][${ruleNumber}].EventHandler.SnapshotTimes`, faceDetectionConfiguration.snapshotTimes.toString());
+        }
+
+        if (ruleConfigQueryParams.size > 0) {
+            await this.setConfigs(ruleConfigQueryParams);
+        }
+
+        //
+        // Face snapshot configurations (Face cutout/Snapshot Mode)
+        //
+        if (faceDetectionConfiguration.faceSnapshotConfig) {
+            const faceSnapshotQueryParams = new URLSearchParams();
+            const faceSnapshotConfig = await this.getConfig('FaceSnapshot');
+
+            const cameraQualityPolicy = {
+                'realtime': 'Realtime',
+                'optimal': 'Optimal',
+                'quality': 'Quality',
+            };
+            const newQuality = cameraQualityPolicy[faceDetectionConfiguration.faceSnapshotConfig.qualityPolicy];
+
+            if (!faceSnapshotConfig.includes(`FaceSnapshot[0].SnapPolicy=${newQuality}`)) {
+                faceSnapshotQueryParams.append('FaceSnapshot[0].SnapPolicy', newQuality);
+            }
+
+            const cameraCutoutPolicy = {
+                'cephalothorax': 'Cephalothorax', // Cephalothorax = One Inch photo
+                'original': 'Original'
+            };
+            const newCutout = cameraCutoutPolicy[faceDetectionConfiguration.faceSnapshotConfig.cutoutPolicy];
+
+            if (!faceSnapshotConfig.includes(`FaceSnapshot[0].CutoutPolicy=${newCutout}`)) {
+                faceSnapshotQueryParams.append('FaceSnapshot[0].CutoutPolicy', newCutout);
+            }
+
+            if (faceSnapshotQueryParams.size > 0) {
+                await this.setConfigs(faceSnapshotQueryParams);
+            }
+        }
+
+        //
+        // Face Enhancement config
+        //
+        if (faceDetectionConfiguration.faceEnhancementConfig) {
+            const faceEnhancementQueryParams = new URLSearchParams();
+            const faceEnhancementConfig = await this.getConfig('VideoEncodeROI');
+
+            if (!faceEnhancementConfig.includes(`VideoEncodeROI[0].DynamicTrack=${faceDetectionConfiguration.faceEnhancementConfig.enabled}`)) {
+                faceEnhancementQueryParams.append('VideoEncodeROI[0].DynamicTrack', faceDetectionConfiguration.faceEnhancementConfig.enabled.toString());
+            }
+
+            if (faceEnhancementQueryParams.size > 0) {
+                await this.setConfigs(faceEnhancementQueryParams);
+            }
+        }
+
+        //
+        // Webhook configuration
+        //
+        if (faceDetectionConfiguration.webhookConfiguration) {
+            const pictureUploadConfig = await this.getConfig('PictureHttpUpload');
+            const pictureUploadQueryParams = new URLSearchParams();
+
+            if (!pictureUploadConfig.includes(`PictureHttpUpload.Enable=${faceDetectionConfiguration.webhookConfiguration.enabled}`)) {
+                pictureUploadQueryParams.append('PictureHttpUpload.Enable', faceDetectionConfiguration.webhookConfiguration.enabled.toString());
+            }
+
+            if (!faceDetectionConfiguration.webhookConfiguration.enabled) {
+                return await this.setConfigs(pictureUploadQueryParams);
+            }
+
+            if (!pictureUploadConfig.includes('PictureHttpUpload.UploadServerList[0]')) {
+                pictureUploadQueryParams.append('PictureHttpUpload.UploadServerList[0].Address', faceDetectionConfiguration.webhookConfiguration.address);
+                pictureUploadQueryParams.append('PictureHttpUpload.UploadServerList[0].EventType[0]', 'FaceDetection');
+                pictureUploadQueryParams.append('PictureHttpUpload.UploadServerList[0].Port', faceDetectionConfiguration.webhookConfiguration.port.toString());
+                pictureUploadQueryParams.append('PictureHttpUpload.UploadServerList[0].Uploadpath', faceDetectionConfiguration.webhookConfiguration.path);
+
+                await this.addConfigs(pictureUploadQueryParams);
+            } else {
+                if (!pictureUploadConfig.includes(`PictureHttpUpload.UploadServerList[0].Address=${faceDetectionConfiguration.webhookConfiguration.address}`)) {
+                    pictureUploadQueryParams.append('PictureHttpUpload.UploadServerList[0].Address', faceDetectionConfiguration.webhookConfiguration.address);
+                }
+
+                if (!this.stringIncludesWithLineBreak(pictureUploadConfig, `PictureHttpUpload.UploadServerList[0].Port=${faceDetectionConfiguration.webhookConfiguration.port}`)) {
+                    pictureUploadQueryParams.append('PictureHttpUpload.UploadServerList[0].Port', faceDetectionConfiguration.webhookConfiguration.port.toString());
+                }
+
+                if (!this.stringIncludesWithLineBreak(pictureUploadConfig, `PictureHttpUpload.UploadServerList[0].Uploadpath=${faceDetectionConfiguration.webhookConfiguration.path}`)) {
+                    pictureUploadQueryParams.append('PictureHttpUpload.UploadServerList[0].Uploadpath', faceDetectionConfiguration.webhookConfiguration.path);
+                }
+
+                if (!pictureUploadConfig.includes('PictureHttpUpload.UploadServerList[0].EventType[0]')) {
+                    await this.addConfigs(new URLSearchParams([
+                        ['PictureHttpUpload.UploadServerList[0].EventType[0]', 'FaceDetection'],
+                    ]));
+                } else {
+                    if (!pictureUploadConfig.includes('PictureHttpUpload.UploadServerList[0].EventType[0]=FaceDetection')) {
+                        pictureUploadQueryParams.append('PictureHttpUpload.UploadServerList[0].EventType[0]', 'FaceDetection');
+                    }
+
+                    for (let i = 1; i < 50; i++) {
+                        if (pictureUploadConfig.includes(`PictureHttpUpload.UploadServerList[0].EventType[${i}]`)) {
+                            await this.removeConfig('PictureHttpUpload.UploadServerList[0].EventType[1]'); // Index is always 1 because the previous one got removed.
+                            await setTimeout(2500);
                         }
                     }
                 }

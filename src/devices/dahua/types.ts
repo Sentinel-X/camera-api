@@ -112,3 +112,33 @@ export type InvasionAreaConfiguration = {
         path: string;
     };
 };
+
+
+export type FaceDetectionConfiguration = {
+    enabled: boolean;
+    property: boolean;
+    faceBeautification: | {
+        enabled: true;
+        level: number; // 1 to 100
+    } | {
+        enabled: false;
+        level?: never;
+    };
+    snapshotEnabled: boolean;
+    snapshotTitleEnabled: boolean;
+    snapshotInterval: number;
+    snapshotTimes: number;
+    faceSnapshotConfig?: {
+        qualityPolicy: 'realtime' | 'optimal' | 'quality';
+        cutoutPolicy: 'cephalothorax' | 'original';
+    };
+    faceEnhancementConfig?: {
+        enabled: boolean;
+    };
+    webhookConfiguration?: {
+        enabled: boolean;
+        address: string;
+        port: number;
+        path: string;
+    };
+};
